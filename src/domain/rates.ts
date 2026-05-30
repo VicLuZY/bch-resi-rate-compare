@@ -71,9 +71,215 @@ export function calculateComparisons(
   return {
     meterKey: meter.meterKey,
     period,
+    sourcePeriods: [period],
+    isAverage: false,
+    periodLabel: `${period.startLocal} to ${period.endLocal}`,
     configId: config.id,
     configVersion: config.version,
     results,
+  };
+}
+
+export function calculateAverageComparisons(
+  meter: MeterAnalysis,
+  periods: AnalysisPeriod[],
+  config: RateConfig,
+): ComparisonBundle {
+  if (!periods.length) {
+    throw new Error("At least one complete annual period is required.");
+  }
+
+  if (periods.length === 1) {
+    return calculateComparisons(meter, periods[0], config);
+  }
+
+  const bundles = periods.map((period) => calculateComparisons(meter, period, config));
+  const averagedResults = config.comparisonOptions
+    .map((option) => {
+      const yearlyResults = bundles.map((bundle) => {
+        const result = bundle.results.find((item) => item.optionId === option.id);
+        if (!result) {
+          throw new Error(`Missing calculation result for ${option.id}.`);
+        }
+        return result;
+      });
+      return averageResults(yearlyResults);
+    })
+    .sort((left, right) => left.totalCost - right.totalCost);
+
+  return {
+    meterKey: meter.meterKey,
+    period: averagePeriod(periods),
+    sourcePeriods: periods,
+    isAverage: true,
+    periodLabel: `Average of ${periods.length} complete annual periods`,
+    configId: config.id,
+    configVersion: config.version,
+    results: averagedResults,
+  };
+}
+
+function averageResults(results: RateComparisonResult[]): RateComparisonResult {
+  const first = results[0];
+  const count = results.length;
+  return {
+    optionId: first.optionId,
+    label: first.label,
+    totalCost: average(results.map((result) => result.totalCost)),
+    totalKwh: average(results.map((result) => result.totalKwh)),
+    serviceDays: average(results.map((result) => result.serviceDays)),
+    components: averageComponents(
+      results.map((result) => result.components),
+      count,
+    ),
+    tierAllocation: first.tierAllocation
+      ? averageTierAllocation(results.map((result) => result.tierAllocation ?? []), count)
+      : undefined,
+    timeOfDayAllocation: first.timeOfDayAllocation
+      ? averageTimeOfDayAllocation(
+          results.map((result) => result.timeOfDayAllocation ?? []),
+          count,
+        )
+      : undefined,
+  };
+}
+
+function averageComponents(componentSets: CostComponent[][], count: number): CostComponent[] {
+  const byId = new Map<
+    string,
+    {
+      template: CostComponent;
+      amount: number;
+      quantity: number;
+      quantityCount: number;
+      intervalCount: number;
+      intervalTraceCount: number;
+    }
+  >();
+
+  for (const components of componentSets) {
+    for (const component of components) {
+      const existing =
+        byId.get(component.id) ??
+        ({
+          template: component,
+          amount: 0,
+          quantity: 0,
+          quantityCount: 0,
+          intervalCount: 0,
+          intervalTraceCount: 0,
+        } satisfies {
+          template: CostComponent;
+          amount: number;
+          quantity: number;
+          quantityCount: number;
+          intervalCount: number;
+          intervalTraceCount: number;
+        });
+      existing.amount += component.amount;
+      if (component.quantity !== undefined) {
+        existing.quantity += component.quantity;
+        existing.quantityCount += 1;
+      }
+      if (component.trace?.intervalCount !== undefined) {
+        existing.intervalCount += component.trace.intervalCount;
+        existing.intervalTraceCount += 1;
+      }
+      byId.set(component.id, existing);
+    }
+  }
+
+  return [...byId.values()].map((entry) => ({
+    ...entry.template,
+    amount: entry.amount / count,
+    quantity:
+      entry.quantityCount > 0
+        ? entry.quantity / count
+        : undefined,
+    trace:
+      entry.intervalTraceCount > 0
+        ? { intervalCount: Math.round(entry.intervalCount / count) }
+        : undefined,
+  }));
+}
+
+function averageTierAllocation(
+  allocations: Array<NonNullable<RateComparisonResult["tierAllocation"]>>,
+  count: number,
+): NonNullable<RateComparisonResult["tierAllocation"]> {
+  const byId = new Map<
+    string,
+    { template: NonNullable<RateComparisonResult["tierAllocation"]>[number]; kwh: number; amount: number }
+  >();
+
+  for (const allocation of allocations) {
+    for (const tier of allocation) {
+      const existing = byId.get(tier.tierId) ?? {
+        template: tier,
+        kwh: 0,
+        amount: 0,
+      };
+      existing.kwh += tier.kwh;
+      existing.amount += tier.amount;
+      byId.set(tier.tierId, existing);
+    }
+  }
+
+  return [...byId.values()].map((entry) => ({
+    ...entry.template,
+    kwh: entry.kwh / count,
+    amount: entry.amount / count,
+  }));
+}
+
+function averageTimeOfDayAllocation(
+  allocations: Array<NonNullable<RateComparisonResult["timeOfDayAllocation"]>>,
+  count: number,
+): NonNullable<RateComparisonResult["timeOfDayAllocation"]> {
+  const byId = new Map<
+    string,
+    {
+      template: NonNullable<RateComparisonResult["timeOfDayAllocation"]>[number];
+      kwh: number;
+      intervalCount: number;
+      amount: number;
+    }
+  >();
+
+  for (const allocation of allocations) {
+    for (const period of allocation) {
+      const existing = byId.get(period.periodId) ?? {
+        template: period,
+        kwh: 0,
+        intervalCount: 0,
+        amount: 0,
+      };
+      existing.kwh += period.kwh;
+      existing.intervalCount += period.intervalCount;
+      existing.amount += period.amount;
+      byId.set(period.periodId, existing);
+    }
+  }
+
+  return [...byId.values()].map((entry) => ({
+    ...entry.template,
+    kwh: entry.kwh / count,
+    intervalCount: Math.round(entry.intervalCount / count),
+    amount: entry.amount / count,
+  }));
+}
+
+function averagePeriod(periods: AnalysisPeriod[]): AnalysisPeriod {
+  const first = periods[0];
+  const last = periods.at(-1)!;
+  return {
+    startEpochMs: first.startEpochMs,
+    endEpochMsExclusive: last.endEpochMsExclusive,
+    startLocal: first.startLocal,
+    endLocal: last.endLocal,
+    serviceDays: average(periods.map((period) => period.serviceDays)),
+    intervalCount: Math.round(average(periods.map((period) => period.intervalCount))),
+    totalKwh: average(periods.map((period) => period.totalKwh)),
   };
 }
 
@@ -383,6 +589,10 @@ function parseClockMinutes(value: string): number {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
+}
+
+function average(values: number[]): number {
+  return values.length ? sum(values) / values.length : 0;
 }
 
 export function scheduleById(config: RateConfig, id: string): RateSchedule | undefined {

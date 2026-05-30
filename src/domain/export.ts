@@ -4,6 +4,8 @@ export function comparisonSummaryCsv(bundle: ComparisonBundle): string {
   const rows = [
     [
       "meter",
+      "basis",
+      "source_periods",
       "period_start",
       "period_end",
       "rate_option",
@@ -19,6 +21,8 @@ export function comparisonSummaryCsv(bundle: ComparisonBundle): string {
     for (const component of result.components) {
       rows.push([
         bundle.meterKey,
+        bundle.periodLabel,
+        formatNumber(bundle.sourcePeriods.length),
         bundle.period.startLocal,
         bundle.period.endLocal,
         result.label,

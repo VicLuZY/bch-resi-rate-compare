@@ -63,6 +63,26 @@ describe("upload validation", () => {
     expect(meter.selectedPeriod?.totalKwh).toBeCloseTo(10_980);
   });
 
+  it("finds non-overlapping complete years for a three-year export", () => {
+    const rows = generateRows({
+      start: "2023-05-30T00:00",
+      end: "2026-05-30T00:00",
+      kwh: 1,
+    });
+
+    const analysis = analyzeCsvs([rowsToCsv(rows)]);
+    const meter = analysis.meters[0];
+
+    expect(meter.issues.filter((issue) => issue.severity === "error")).toHaveLength(0);
+    expect(meter.completePeriods).toHaveLength(3);
+    expect(meter.completePeriods.map((period) => period.startLocal)).toEqual([
+      "2023-05-30T00:00",
+      "2024-05-30T00:00",
+      "2025-05-30T00:00",
+    ]);
+    expect(meter.completePeriods.at(-1)?.endLocal).toBe("2026-05-30T00:00");
+  }, 15_000);
+
   it("deduplicates exact overlap rows from segmented exports", () => {
     const rows = generateRows({
       start: "2024-01-01T00:00",

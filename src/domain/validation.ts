@@ -386,32 +386,32 @@ function findCompleteAnnualPeriods(
       prefixKwh.push(prefixKwh.at(-1)! + interval.consumptionKwh);
     }
 
-    const midnightCandidates = runIntervals
-      .map((interval, index) => ({ interval, index }))
-      .filter(
-        ({ interval }) => interval.localStart.hour === 0 && interval.localStart.minute === 0,
-      );
-    const candidates = midnightCandidates.length
-      ? midnightCandidates
-      : runIntervals.map((interval, index) => ({ interval, index }));
+    let index = runIntervals.findIndex(
+      (interval) => interval.localStart.hour === 0 && interval.localStart.minute === 0,
+    );
+    if (index < 0) {
+      index = 0;
+    }
 
-    for (const { interval, index } of candidates) {
+    while (index < runIntervals.length) {
+      const interval = runIntervals[index];
       const endEpochMs = addLocalYears(interval.epochMs, timeZone, 1);
-      if (endEpochMs <= run.endEpochMsExclusive + EPSILON_MS) {
-        const periodIntervalCount = Math.round(
-          (endEpochMs - interval.epochMs) / cadenceMs,
-        );
-        const endIndex = index + periodIntervalCount;
-        periods.push({
-          startEpochMs: interval.epochMs,
-          endEpochMsExclusive: endEpochMs,
-          startLocal: epochToWallKey(interval.epochMs, timeZone),
-          endLocal: epochToWallKey(endEpochMs, timeZone),
-          serviceDays: calendarDaysBetween(interval.epochMs, endEpochMs, timeZone),
-          intervalCount: periodIntervalCount,
-          totalKwh: prefixKwh[endIndex] - prefixKwh[index],
-        });
+      if (endEpochMs > run.endEpochMsExclusive + EPSILON_MS) {
+        break;
       }
+
+      const periodIntervalCount = Math.round((endEpochMs - interval.epochMs) / cadenceMs);
+      const endIndex = index + periodIntervalCount;
+      periods.push({
+        startEpochMs: interval.epochMs,
+        endEpochMsExclusive: endEpochMs,
+        startLocal: epochToWallKey(interval.epochMs, timeZone),
+        endLocal: epochToWallKey(endEpochMs, timeZone),
+        serviceDays: calendarDaysBetween(interval.epochMs, endEpochMs, timeZone),
+        intervalCount: periodIntervalCount,
+        totalKwh: prefixKwh[endIndex] - prefixKwh[index],
+      });
+      index = endIndex;
     }
   }
 

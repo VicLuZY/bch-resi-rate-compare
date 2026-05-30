@@ -215,6 +215,9 @@ export interface RateComparisonResult {
 export interface ComparisonBundle {
   meterKey: string;
   period: AnalysisPeriod;
+  sourcePeriods: AnalysisPeriod[];
+  isAverage: boolean;
+  periodLabel: string;
   configId: string;
   configVersion: string;
   results: RateComparisonResult[];

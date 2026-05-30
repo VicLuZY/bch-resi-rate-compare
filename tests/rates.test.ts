@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseConsumptionFiles } from "../src/domain/csv";
 import { comparisonSummaryCsv } from "../src/domain/export";
-import { calculateComparisons } from "../src/domain/rates";
+import { calculateAverageComparisons, calculateComparisons } from "../src/domain/rates";
 import { analyzeUploads } from "../src/domain/validation";
 import { generateRows, rowsToCsv, syntheticRateConfig } from "./fixtures";
 import type { RateConfig } from "../src/domain/types";
@@ -76,6 +76,55 @@ describe("rate calculations", () => {
 
     expect(changedFlat.totalCost - originalFlat.totalCost).toBeCloseTo(87_840 * 0.01 * 1.1);
   });
+
+  it("averages all complete annual periods instead of using only the latest year", () => {
+    const rows = generateRows({
+      start: "2023-01-01T00:00",
+      end: "2026-01-01T00:00",
+      kwh: (dateTime) => dateTime.year - 2022,
+    });
+    const parsed = parseConsumptionFiles([{ name: "three-years.csv", text: rowsToCsv(rows) }]);
+    const analysis = analyzeUploads(
+      parsed.records,
+      parsed.fileSummaries,
+      parsed.issues,
+      syntheticRateConfig.timezone,
+    );
+    const meter = analysis.meters[0];
+
+    expect(meter.completePeriods).toHaveLength(3);
+
+    const averaged = calculateAverageComparisons(
+      meter,
+      meter.completePeriods,
+      syntheticRateConfig,
+    );
+    const latest = calculateComparisons(
+      meter,
+      meter.completePeriods.at(-1)!,
+      syntheticRateConfig,
+    );
+    const yearlyFlatCosts = meter.completePeriods.map(
+      (period) =>
+        calculateComparisons(meter, period, syntheticRateConfig).results.find(
+          (result) => result.optionId === "RS1151",
+        )!.totalCost,
+    );
+    const averagedFlat = averaged.results.find((result) => result.optionId === "RS1151")!;
+    const latestFlat = latest.results.find((result) => result.optionId === "RS1151")!;
+
+    expect(averaged.isAverage).toBe(true);
+    expect(averaged.sourcePeriods).toHaveLength(3);
+    expect(averagedFlat.totalKwh).toBeCloseTo(
+      meter.completePeriods.reduce((total, period) => total + period.totalKwh, 0) / 3,
+      6,
+    );
+    expect(averagedFlat.totalCost).toBeCloseTo(
+      yearlyFlatCosts.reduce((total, cost) => total + cost, 0) / 3,
+      6,
+    );
+    expect(averagedFlat.totalCost).toBeLessThan(latestFlat.totalCost);
+  }, 15_000);
 
   it("itemizes enabled taxes from the editable configuration", () => {
     const taxedConfig: RateConfig = structuredClone(syntheticRateConfig);

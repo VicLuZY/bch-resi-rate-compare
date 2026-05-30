@@ -1,7 +1,7 @@
 import "./styles.css";
 import { parseConsumptionFiles, type TextFileInput } from "./domain/csv";
 import { comparisonSummaryCsv, rankedTotals, validationReportCsv } from "./domain/export";
-import { calculateComparisons, validateRateConfig } from "./domain/rates";
+import { calculateAverageComparisons, validateRateConfig } from "./domain/rates";
 import { analyzeUploads, intervalsForPeriod } from "./domain/validation";
 import type {
   AnalysisPeriod,
@@ -24,6 +24,7 @@ import type {
 const DEFAULT_RATE_CONFIG_URL = `${import.meta.env.BASE_URL}rates/bchydro-residential-2026-04-01.json`;
 const BC_HYDRO_DATA_EXPORT_URL =
   "https://app.bchydro.com/datadownload/web/download-centre.html";
+const AVERAGE_PERIOD_INDEX = -1;
 
 interface AppState {
   rateConfig?: RateConfig;
@@ -63,18 +64,18 @@ async function init(): Promise<void> {
 
 function render(): void {
   const selectedMeter = currentMeter();
-  const selectedPeriod = selectedMeter ? currentPeriod(selectedMeter) : undefined;
+  const selectedPeriods = selectedMeter ? currentPeriods(selectedMeter) : [];
   const configErrors = state.rateConfig ? validateRateConfig(state.rateConfig) : [];
   let comparison: ComparisonBundle | undefined;
   let calculationError: string | undefined;
 
-  if (selectedMeter && selectedPeriod && state.rateConfig && canCalculate(selectedMeter)) {
+  if (selectedMeter && selectedPeriods.length && state.rateConfig && canCalculate(selectedMeter)) {
     if (configErrors.length) {
       calculationError =
         "Rate assumptions need attention before a comparison can be calculated.";
     } else {
       try {
-        comparison = calculateComparisons(selectedMeter, selectedPeriod, state.rateConfig);
+        comparison = calculateAverageComparisons(selectedMeter, selectedPeriods, state.rateConfig);
       } catch (error) {
         calculationError = error instanceof Error ? error.message : String(error);
       }
@@ -96,7 +97,7 @@ function render(): void {
       </aside>
       <section class="main-panel">
         ${state.loadError ? renderNotice("error", state.loadError) : ""}
-        ${renderValidationPanel(selectedMeter, selectedPeriod)}
+        ${renderValidationPanel(selectedMeter, selectedPeriods)}
         ${calculationError ? renderNotice("error", calculationError) : ""}
         ${comparison ? renderResultsPanel(comparison, selectedMeter!) : ""}
       </section>
@@ -394,7 +395,7 @@ function renderSourceNotes(): string {
 
 function renderValidationPanel(
   selectedMeter?: MeterAnalysis,
-  selectedPeriod?: AnalysisPeriod,
+  selectedPeriods: AnalysisPeriod[] = [],
 ): string {
   if (!state.upload) {
     const range = recommendedExportRange();
@@ -467,7 +468,7 @@ function renderValidationPanel(
         }
       </div>
       ${renderGlobalIssues(state.upload.issues)}
-      ${selectedMeter ? renderMeterValidation(selectedMeter, selectedPeriod) : ""}
+      ${selectedMeter ? renderMeterValidation(selectedMeter, selectedPeriods) : ""}
     </section>
   `;
 }
@@ -509,18 +510,15 @@ function renderGlobalIssues(issues: ValidationIssue[]): string {
 
 function renderMeterValidation(
   meter: MeterAnalysis,
-  selectedPeriod?: AnalysisPeriod,
+  selectedPeriods: AnalysisPeriod[],
 ): string {
   const errorCount = meter.issues.filter((issue) => issue.severity === "error").length;
   const warningCount = meter.issues.filter((issue) => issue.severity === "warning").length;
   const periodOptions = meter.completePeriods;
-  const periodIndex = selectedPeriod
-    ? periodOptions.findIndex((period) => period.startEpochMs === selectedPeriod.startEpochMs)
-    : -1;
+  const periodIndex = currentPeriodIndex(meter);
   const estimatedCount = meter.intervals.filter((interval) => interval.estimated).length;
-  const periodIntervals = selectedPeriod
-    ? intervalsForPeriod(meter.intervals, selectedPeriod)
-    : [];
+  const periodIntervals = intervalsForPeriods(meter.intervals, selectedPeriods);
+  const selectedSummary = summarizePeriods(selectedPeriods);
 
   return `
     <div class="metric-strip">
@@ -548,6 +546,13 @@ function renderMeterValidation(
         ${
           periodOptions.length
             ? `<select id="periodSelect" aria-label="Select annual period">
+                ${
+                  periodOptions.length > 1
+                    ? `<option value="${AVERAGE_PERIOD_INDEX}" ${periodIndex === AVERAGE_PERIOD_INDEX ? "selected" : ""}>
+                        Average of ${periodOptions.length} complete annual periods
+                      </option>`
+                    : ""
+                }
                 ${periodOptions
                   .map(
                     (period, index) => `
@@ -559,9 +564,10 @@ function renderMeterValidation(
                   .join("")}
               </select>
               <dl class="facts">
-                <div><dt>Consumption</dt><dd>${formatKwh(selectedPeriod?.totalKwh ?? 0)}</dd></div>
-                <div><dt>Service days</dt><dd>${selectedPeriod?.serviceDays ?? 0}</dd></div>
-                <div><dt>Rows in period</dt><dd>${periodIntervals.length.toLocaleString()}</dd></div>
+                <div><dt>${selectedPeriods.length > 1 ? "Average annual consumption" : "Consumption"}</dt><dd>${formatKwh(selectedSummary.totalKwh)}</dd></div>
+                <div><dt>${selectedPeriods.length > 1 ? "Average service days" : "Service days"}</dt><dd>${formatNumber(selectedSummary.serviceDays)}</dd></div>
+                <div><dt>Rows included</dt><dd>${periodIntervals.length.toLocaleString()}</dd></div>
+                <div><dt>Source range</dt><dd>${escapeHtml(selectedSummary.startLocal)} to ${escapeHtml(selectedSummary.endLocal)}</dd></div>
               </dl>`
             : `<p class="blocked">No complete continuous local year is available for calculation.</p>`
         }
@@ -602,15 +608,24 @@ function renderMeterMetadata(meter: MeterAnalysis): string {
 }
 
 function renderResultsPanel(bundle: ComparisonBundle, meter: MeterAnalysis): string {
-  const periodIntervals = intervalsForPeriod(meter.intervals, bundle.period);
+  const periodIntervals = intervalsForPeriods(meter.intervals, bundle.sourcePeriods);
+  const periodCount = bundle.sourcePeriods.length;
   return `
     <section class="panel wide results report-surface">
       <div class="panel-heading split">
         <div>
-          <h2>Annual comparison</h2>
-          <p>${escapeHtml(bundle.period.startLocal)} to ${escapeHtml(
-            bundle.period.endLocal,
-          )}; ${formatKwh(bundle.period.totalKwh)}.</p>
+          <h2>${bundle.isAverage ? "Average annual comparison" : "Annual comparison"}</h2>
+          <p>${
+            bundle.isAverage
+              ? `${periodCount} complete years averaged from ${escapeHtml(
+                  bundle.period.startLocal,
+                )} to ${escapeHtml(bundle.period.endLocal)}; ${formatKwh(
+                  bundle.period.totalKwh,
+                )} average annual usage.`
+              : `${escapeHtml(bundle.period.startLocal)} to ${escapeHtml(
+                  bundle.period.endLocal,
+                )}; ${formatKwh(bundle.period.totalKwh)}.`
+          }</p>
         </div>
         <div class="button-row compact">
           <button id="downloadComparison" type="button">Export summary CSV</button>
@@ -747,7 +762,7 @@ function renderCostComparisonDashboard(bundle: ComparisonBundle): string {
     <div class="visual-section">
       <div class="section-title">
         <h3>Cost comparison</h3>
-        <span>Bars show annual cost; stack colors show where each dollar goes.</span>
+        <span>Bars show ${bundle.isAverage ? "average annual" : "annual"} cost; stack colors show where each dollar goes.</span>
       </div>
       <div class="ranked-bars enhanced">
         ${ranking
@@ -782,7 +797,7 @@ function renderOptionGuideItem(result: RateComparisonResult): string {
       <strong>${escapeHtml(result.label)}</strong>
       <span>${baseDescription}</span>
       <span>${timeBandDescription}</span>
-      <em>${formatCurrency(result.totalCost)} for ${formatKwh(result.totalKwh)} in the selected year.</em>
+      <em>${formatCurrency(result.totalCost)} for ${formatKwh(result.totalKwh)} average annual usage.</em>
     </div>
   `;
 }
@@ -837,16 +852,17 @@ function renderCostStackBars(bundle: ComparisonBundle): string {
 }
 
 function renderUsageDashboard(intervals: NormalizedInterval[], bundle: ComparisonBundle): string {
+  const annualDivisor = Math.max(1, bundle.sourcePeriods.length);
   return `
     <div class="visual-section usage-section">
       <div class="section-title">
         <h3>Usage over time</h3>
-        <span>Discrete hourly bars and time bands show when the bill moves.</span>
+        <span>Discrete hourly bars and time bands show when the average annual bill moves.</span>
       </div>
       <div class="chart-grid">
         <div class="chart-panel">
-          <h4>Monthly kWh</h4>
-          ${renderMonthlyChart(intervals)}
+          <h4>Average monthly kWh</h4>
+          ${renderMonthlyChart(intervals, annualDivisor)}
         </div>
         <div class="chart-panel">
           <h4>Average hourly load by rate band</h4>
@@ -1018,10 +1034,10 @@ function clockMinutes(value: string): number {
   return Number(hour) * 60 + Number(minute);
 }
 
-function renderMonthlyChart(intervals: NormalizedInterval[]): string {
-  const monthly = [...groupByMonth(intervals).entries()].map(([month, kwh]) => ({
+function renderMonthlyChart(intervals: NormalizedInterval[], annualDivisor: number): string {
+  const monthly = [...groupByMonth(intervals, annualDivisor > 1).entries()].map(([month, kwh]) => ({
     month,
-    kwh,
+    kwh: kwh / annualDivisor,
   }));
   const max = Math.max(...monthly.map((item) => item.kwh), 1);
   const width = 720;
@@ -1406,9 +1422,9 @@ function bindEvents(): void {
 
   document.querySelector<HTMLButtonElement>("#downloadComparison")?.addEventListener("click", () => {
     const meter = currentMeter();
-    const period = meter ? currentPeriod(meter) : undefined;
-    if (meter && period && state.rateConfig) {
-      const bundle = calculateComparisons(meter, period, state.rateConfig);
+    const periods = meter ? currentPeriods(meter) : [];
+    if (meter && periods.length && state.rateConfig) {
+      const bundle = calculateAverageComparisons(meter, periods, state.rateConfig);
       downloadText("bchydro-rate-comparison.csv", comparisonSummaryCsv(bundle));
     }
   });
@@ -1510,14 +1526,65 @@ function currentMeter(): MeterAnalysis | undefined {
   );
 }
 
-function currentPeriod(meter: MeterAnalysis): AnalysisPeriod | undefined {
+function currentPeriods(meter: MeterAnalysis): AnalysisPeriod[] {
   if (!meter.completePeriods.length) {
-    return undefined;
+    return [];
   }
 
-  const index =
-    state.selectedPeriodIndex[meter.meterKey] ?? Math.max(0, meter.completePeriods.length - 1);
-  return meter.completePeriods[index] ?? meter.completePeriods.at(-1);
+  const index = currentPeriodIndex(meter);
+  if (index === AVERAGE_PERIOD_INDEX) {
+    return meter.completePeriods;
+  }
+
+  return [meter.completePeriods[index] ?? meter.completePeriods.at(-1)!];
+}
+
+function currentPeriodIndex(meter: MeterAnalysis): number {
+  if (!meter.completePeriods.length) {
+    return AVERAGE_PERIOD_INDEX;
+  }
+
+  const stored = state.selectedPeriodIndex[meter.meterKey];
+  if (stored !== undefined) {
+    return stored === AVERAGE_PERIOD_INDEX && meter.completePeriods.length === 1
+      ? 0
+      : stored;
+  }
+
+  return meter.completePeriods.length > 1 ? AVERAGE_PERIOD_INDEX : 0;
+}
+
+function intervalsForPeriods(
+  intervals: NormalizedInterval[],
+  periods: AnalysisPeriod[],
+): NormalizedInterval[] {
+  return periods.flatMap((period) => intervalsForPeriod(intervals, period));
+}
+
+function summarizePeriods(periods: AnalysisPeriod[]): AnalysisPeriod {
+  if (!periods.length) {
+    return {
+      startEpochMs: 0,
+      endEpochMsExclusive: 0,
+      startLocal: "n/a",
+      endLocal: "n/a",
+      serviceDays: 0,
+      intervalCount: 0,
+      totalKwh: 0,
+    };
+  }
+
+  const first = periods[0];
+  const last = periods.at(-1)!;
+  return {
+    startEpochMs: first.startEpochMs,
+    endEpochMsExclusive: last.endEpochMsExclusive,
+    startLocal: first.startLocal,
+    endLocal: last.endLocal,
+    serviceDays: average(periods.map((period) => period.serviceDays)),
+    intervalCount: Math.round(average(periods.map((period) => period.intervalCount))),
+    totalKwh: average(periods.map((period) => period.totalKwh)),
+  };
 }
 
 function canCalculate(meter: MeterAnalysis): boolean {
@@ -1536,6 +1603,10 @@ function formatCurrency(value: number): string {
 
 function formatKwh(value: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} kWh`;
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 }
 
 function formatPercent(value: number): string {
@@ -1568,12 +1639,22 @@ function joinValues(values: string[]): string {
   return values.length ? values.join(", ") : "Not supplied";
 }
 
-function groupByMonth(intervals: NormalizedInterval[]): Map<string, number> {
+function average(values: number[]): number {
+  return values.length
+    ? values.reduce((total, value) => total + value, 0) / values.length
+    : 0;
+}
+
+function groupByMonth(
+  intervals: NormalizedInterval[],
+  groupByCalendarMonth = false,
+): Map<string, number> {
   const groups = new Map<string, number>();
   for (const interval of intervals) {
-    const month = `${String(interval.localStart.year).padStart(4, "0")}-${String(
-      interval.localStart.month,
-    ).padStart(2, "0")}`;
+    const monthNumber = String(interval.localStart.month).padStart(2, "0");
+    const month = groupByCalendarMonth
+      ? monthNumber
+      : `${String(interval.localStart.year).padStart(4, "0")}-${monthNumber}`;
     groups.set(month, (groups.get(month) ?? 0) + interval.consumptionKwh);
   }
 
@@ -1581,17 +1662,21 @@ function groupByMonth(intervals: NormalizedInterval[]): Map<string, number> {
 }
 
 function monthLabel(month: string): string {
-  const [year, monthNumber] = month.split("-").map(Number);
+  const parts = month.split("-").map(Number);
+  const year = parts.length === 2 ? parts[0] : 2000;
+  const monthNumber = parts.length === 2 ? parts[1] : parts[0];
   const date = new Date(Date.UTC(year, monthNumber - 1, 1));
   return new Intl.DateTimeFormat(undefined, {
     month: "long",
-    year: "numeric",
+    ...(parts.length === 2 ? { year: "numeric" as const } : {}),
     timeZone: "UTC",
   }).format(date);
 }
 
 function shortMonthLabel(month: string): string {
-  const [year, monthNumber] = month.split("-").map(Number);
+  const parts = month.split("-").map(Number);
+  const year = parts.length === 2 ? parts[0] : 2000;
+  const monthNumber = parts.length === 2 ? parts[1] : parts[0];
   const date = new Date(Date.UTC(year, monthNumber - 1, 1));
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
