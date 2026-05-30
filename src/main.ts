@@ -25,10 +25,28 @@ const DEFAULT_RATE_CONFIG_URL = `${import.meta.env.BASE_URL}rates/bchydro-reside
 const BC_HYDRO_DATA_EXPORT_URL =
   "https://app.bchydro.com/datadownload/web/download-centre.html";
 const AVERAGE_PERIOD_INDEX = -1;
+const EXAMPLE_EXPORTS = [
+  {
+    id: "ev",
+    label: "EV charging example",
+    description: "Synthetic overnight charging profile without electric space heating.",
+    fileName: "bchydro-example-ev-charging-no-electric-heat.csv",
+    url: `${import.meta.env.BASE_URL}examples/bchydro-example-ev-charging-no-electric-heat.csv`,
+  },
+  {
+    id: "baseboard",
+    label: "Electric baseboard example",
+    description: "Synthetic winter heating profile without EV charging.",
+    fileName: "bchydro-example-electric-baseboard-no-ev.csv",
+    url: `${import.meta.env.BASE_URL}examples/bchydro-example-electric-baseboard-no-ev.csv`,
+  },
+] as const;
 
 interface AppState {
   rateConfig?: RateConfig;
   rateConfigUserModified: boolean;
+  rateAssumptionsExpanded: boolean;
+  rateAssumptionsUnlocked: boolean;
   upload?: UploadAnalysis;
   parsedRecords?: ParsedConsumptionRecord[];
   fileSummaries?: FileSummary[];
@@ -36,10 +54,13 @@ interface AppState {
   selectedMeterKey?: string;
   selectedPeriodIndex: Record<string, number>;
   loadError?: string;
+  exampleLoadError?: string;
 }
 
 const state: AppState = {
   rateConfigUserModified: false,
+  rateAssumptionsExpanded: false,
+  rateAssumptionsUnlocked: false,
   selectedPeriodIndex: {},
 };
 
@@ -138,6 +159,23 @@ function renderUploadPanel(): string {
         <input id="fileInput" type="file" accept=".csv,text/csv" multiple />
         <span>Choose CSV files</span>
       </label>
+      <div class="example-loader" aria-label="Load sanitized example CSVs">
+        <div>
+          <strong>Try sanitized examples</strong>
+          <span>Generated placeholder data with no real customer identifiers.</span>
+        </div>
+        <div class="example-buttons">
+          ${EXAMPLE_EXPORTS.map(
+            (example) => `
+              <button class="secondary example-button" type="button" data-example-id="${escapeAttribute(example.id)}">
+                <strong>${escapeHtml(example.label)}</strong>
+                <span>${escapeHtml(example.description)}</span>
+              </button>
+            `,
+          ).join("")}
+        </div>
+      </div>
+      ${state.exampleLoadError ? renderNotice("error", state.exampleLoadError) : ""}
       ${
         files.length
           ? `<div class="file-list">
@@ -164,49 +202,90 @@ function renderUploadPanel(): string {
 function renderAssumptionsPanel(): string {
   const configErrors = state.rateConfig ? validateRateConfig(state.rateConfig) : [];
   const config = state.rateConfig;
+  const isOpen = state.rateAssumptionsExpanded;
+  const isUnlocked = state.rateAssumptionsUnlocked;
   if (!config) {
     return `
       <section class="panel assumptions">
-        <div class="panel-heading">
-          <h2>Rate assumptions</h2>
-          <p>No rate configuration loaded.</p>
+        <div class="assumptions-header">
+          <button id="toggleAssumptions" class="assumptions-toggle" type="button" aria-expanded="false">
+            <span>
+              <strong>Rate assumptions</strong>
+              <small>No rate configuration loaded.</small>
+            </span>
+          </button>
         </div>
       </section>
     `;
   }
 
   return `
-    <section class="panel assumptions">
-      <div class="panel-heading">
-        <h2>Rate assumptions</h2>
-        <p>${escapeHtml(config.label)}</p>
+    <section class="panel assumptions ${isOpen ? "is-open" : ""}">
+      <div class="assumptions-header">
+        <button
+          id="toggleAssumptions"
+          class="assumptions-toggle"
+          type="button"
+          aria-expanded="${isOpen ? "true" : "false"}"
+          aria-controls="rateAssumptionsBody"
+        >
+          <span>
+            <strong>Rate assumptions</strong>
+            <small>${escapeHtml(config.label)}</small>
+          </span>
+          <em>${isOpen ? "Collapse" : "Expand"}</em>
+        </button>
+        <button id="unlockRateConfig" type="button" class="secondary lock-button ${isUnlocked ? "unlocked" : ""}">
+          ${isUnlocked ? "Lock edits" : "Unlock edits"}
+        </button>
       </div>
-      <div class="status-line">
-        <span class="status ${configErrors.length ? "bad" : "good"}">
-          ${configErrors.length ? "Needs attention" : "Ready"}
-        </span>
-        <span>${state.rateConfigUserModified ? "User-modified" : "Tariff file"}</span>
-      </div>
-      ${renderRateGuide(config)}
+      <p class="assumptions-collapsed-note">
+        ${isUnlocked ? "Editing is unlocked for this session." : "Defaults are locked to prevent accidental edits."}
+        ${state.rateConfigUserModified ? " Current values include user changes." : " Current values use the bundled tariff file."}
+      </p>
       ${
-        configErrors.length
-          ? `<ul class="issue-list">${configErrors
-              .map((error) => `<li>${escapeHtml(error)}</li>`)
-              .join("")}</ul>`
+        isOpen
+          ? `<div id="rateAssumptionsBody" class="assumptions-body">
+              <div class="status-line">
+                <span class="status ${configErrors.length ? "bad" : "good"}">
+                  ${configErrors.length ? "Needs attention" : "Ready"}
+                </span>
+                <span>${state.rateConfigUserModified ? "User-modified" : "Tariff file"}</span>
+                <span class="status ${isUnlocked ? "good" : "locked"}">${isUnlocked ? "Editable" : "Locked"}</span>
+              </div>
+              ${isUnlocked ? "" : renderLockNotice()}
+              ${renderRateGuide(config)}
+              ${
+                configErrors.length
+                  ? `<ul class="issue-list">${configErrors
+                      .map((error) => `<li>${escapeHtml(error)}</li>`)
+                      .join("")}</ul>`
+                  : ""
+              }
+              <div class="assumption-scroll">
+                ${renderBaseScheduleEditor(config.schedules.RS1101)}
+                ${renderBaseScheduleEditor(config.schedules.RS1151)}
+                ${renderTimeOfDayEditor(config.schedules.RS2101)}
+                ${renderPercentageEditor("Levies", config.levies ?? [], "levies")}
+                ${renderPercentageEditor("Taxes", config.taxes ?? [], "taxes")}
+              </div>
+              <div class="button-row">
+                <button id="resetRateConfig" type="button" class="secondary" ${isUnlocked ? "" : "disabled"}>Reload default</button>
+              </div>
+              ${renderSourceNotes()}
+            </div>`
           : ""
       }
-      <div class="assumption-scroll">
-        ${renderBaseScheduleEditor(config.schedules.RS1101)}
-        ${renderBaseScheduleEditor(config.schedules.RS1151)}
-        ${renderTimeOfDayEditor(config.schedules.RS2101)}
-        ${renderPercentageEditor("Levies", config.levies ?? [], "levies")}
-        ${renderPercentageEditor("Taxes", config.taxes ?? [], "taxes")}
-      </div>
-      <div class="button-row">
-        <button id="resetRateConfig" type="button" class="secondary">Reload default</button>
-      </div>
-      ${renderSourceNotes()}
     </section>
+  `;
+}
+
+function renderLockNotice(): string {
+  return `
+    <div class="lock-notice">
+      <strong>Locked by default</strong>
+      <span>Unlock only if you want to override rates, riders, taxes, or clock-window adjustments. Changes affect every comparison in this browser session.</span>
+    </div>
   `;
 }
 
@@ -353,7 +432,7 @@ function renderPercentageEditor(
               <label class="toggle-row">
                 <input type="checkbox" data-rate-path="${escapeAttribute(path)}.enabled" data-kind="boolean" ${
                   percentage.enabled === false ? "" : "checked"
-                } />
+                } ${rateControlDisabledAttribute()} />
                 <span>${escapeHtml(percentage.label)}</span>
               </label>
               ${numberControl("Rate", `${path}.rate`, percentage.rate, "%", 0.0001, true)}
@@ -379,7 +458,7 @@ function numberControl(
       <span class="input-with-unit">
         <input type="number" data-rate-path="${escapeAttribute(path)}" data-kind="number" value="${escapeAttribute(
           String(percent ? value * 100 : value),
-        )}" step="${step}" ${percent ? 'data-scale="percent"' : ""} />
+        )}" step="${step}" ${percent ? 'data-scale="percent"' : ""} ${rateControlDisabledAttribute()} />
         <small>${escapeHtml(suffix)}</small>
       </span>
     </label>
@@ -390,9 +469,13 @@ function timeControl(label: string, path: string, value: string): string {
   return `
     <label class="field-row compact-field">
       <span>${escapeHtml(label)}</span>
-      <input type="time" data-rate-path="${escapeAttribute(path)}" data-kind="string" value="${escapeAttribute(value)}" />
+      <input type="time" data-rate-path="${escapeAttribute(path)}" data-kind="string" value="${escapeAttribute(value)}" ${rateControlDisabledAttribute()} />
     </label>
   `;
+}
+
+function rateControlDisabledAttribute(): string {
+  return state.rateAssumptionsUnlocked ? "" : "disabled";
 }
 
 function renderSourceNotes(): string {
@@ -1413,14 +1496,44 @@ function bindEvents(): void {
     void handleFiles(input.files ? [...input.files] : []);
   });
 
+  document.querySelectorAll<HTMLButtonElement>("[data-example-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void handleExampleLoad(button.dataset.exampleId ?? "");
+    });
+  });
+
   document.querySelectorAll<HTMLInputElement>("[data-rate-path]").forEach((input) => {
     input.addEventListener("change", () => {
       applyRateControl(input);
     });
   });
 
+  document.querySelector<HTMLButtonElement>("#toggleAssumptions")?.addEventListener("click", () => {
+    state.rateAssumptionsExpanded = !state.rateAssumptionsExpanded;
+    render();
+  });
+
+  document.querySelector<HTMLButtonElement>("#unlockRateConfig")?.addEventListener("click", () => {
+    if (state.rateAssumptionsUnlocked) {
+      state.rateAssumptionsUnlocked = false;
+      render();
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Unlock rate assumptions for editing? Changes affect all comparison results in this browser session and should be verified against current BC Hydro tariff information.",
+    );
+    if (confirmed) {
+      state.rateAssumptionsUnlocked = true;
+      state.rateAssumptionsExpanded = true;
+      render();
+    }
+  });
+
   document.querySelector<HTMLButtonElement>("#resetRateConfig")?.addEventListener("click", () => {
     state.rateConfigUserModified = false;
+    state.rateAssumptionsUnlocked = false;
+    state.rateAssumptionsExpanded = true;
     void init();
   });
 
@@ -1461,7 +1574,7 @@ function bindEvents(): void {
 }
 
 function applyRateControl(input: HTMLInputElement): void {
-  if (!state.rateConfig) {
+  if (!state.rateConfig || !state.rateAssumptionsUnlocked) {
     return;
   }
 
@@ -1502,10 +1615,35 @@ async function handleFiles(files: File[]): Promise<void> {
   const textFiles: TextFileInput[] = await Promise.all(
     files.map(async (file) => ({ name: file.name, text: await file.text() })),
   );
+  handleTextFiles(textFiles);
+}
+
+async function handleExampleLoad(exampleId: string): Promise<void> {
+  const example = EXAMPLE_EXPORTS.find((item) => item.id === exampleId);
+  if (!example) {
+    return;
+  }
+
+  try {
+    const response = await fetch(example.url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    handleTextFiles([{ name: example.fileName, text: await response.text() }]);
+  } catch (error) {
+    state.exampleLoadError = `Unable to load ${example.label}: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    render();
+  }
+}
+
+function handleTextFiles(textFiles: TextFileInput[]): void {
   const parsed = parseConsumptionFiles(textFiles);
   state.parsedRecords = parsed.records;
   state.fileSummaries = parsed.fileSummaries;
   state.parseIssues = parsed.issues;
+  state.exampleLoadError = undefined;
   state.upload = analyzeUploads(
     parsed.records,
     parsed.fileSummaries,

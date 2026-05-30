@@ -22,6 +22,7 @@ Open the printed local URL, upload one or more BC Hydro consumption CSV exports,
 - Keeps rates, tier thresholds, time windows, riders, taxes, and source notes in `public/rates/bchydro-residential-2026-04-01.json`.
 - Lets users edit rate assumptions through labelled controls and recalculate without code changes.
 - Displays uploaded customer, account, meter, and service-address metadata locally in the browser.
+- Includes sanitized loadable examples for an EV-charging household and an electric-baseboard-heating household.
 - Shows visual cost comparisons, cost-stack percentages, clock-window shares, monthly usage, hourly usage, and day/hour intensity.
 - Exports validation and comparison summaries as CSV.
 
