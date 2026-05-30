@@ -1,6 +1,15 @@
 {
   "name": "bchydro-rate-comparator",
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VicLuZY/bch-resi-rate-compare.git"
+  },
+  "homepage": "https://vicluzy.github.io/bch-resi-rate-compare/",
+  "bugs": {
+    "url": "https://github.com/VicLuZY/bch-resi-rate-compare/issues"
+  },
   "private": true,
   "type": "module",
   "scripts": {

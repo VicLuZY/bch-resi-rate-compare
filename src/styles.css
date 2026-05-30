@@ -147,6 +147,33 @@ a {
   padding: 20px clamp(16px, 4vw, 48px) 52px;
 }
 
+.site-footer {
+  display: grid;
+  gap: 10px;
+  padding: 18px clamp(16px, 4vw, 48px) 28px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.footer-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.footer-meta strong {
+  color: var(--ink);
+}
+
+.footer-disclaimer {
+  max-width: 1120px;
+  margin: 0;
+}
+
 .sidebar,
 .main-panel {
   display: grid;

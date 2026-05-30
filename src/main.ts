@@ -102,9 +102,28 @@ function render(): void {
         ${comparison ? renderResultsPanel(comparison, selectedMeter!) : ""}
       </section>
     </main>
+    ${renderSiteFooter()}
   `;
 
   bindEvents();
+}
+
+function renderSiteFooter(): string {
+  return `
+    <footer class="site-footer">
+      <div class="footer-meta">
+        <strong>&copy; Victor Lü, 2026.</strong>
+        <span>
+          Licensed
+          <a href="https://github.com/VicLuZY/bch-resi-rate-compare/blob/main/LICENSE" target="_blank" rel="noreferrer">AGPL-3.0-only</a>.
+        </span>
+        <a href="https://github.com/VicLuZY/bch-resi-rate-compare" target="_blank" rel="noreferrer">Source code</a>
+      </div>
+      <p class="footer-disclaimer">
+        Calculator results are estimates for comparison only, provided without warranty, and are not a BC Hydro bill or official tariff interpretation. Verify uploaded data, effective rates, riders, taxes, credits, charges, and bill-cycle rounding before using results for decisions.
+      </p>
+    </footer>
+  `;
 }
 
 function renderUploadPanel(): string {
