@@ -1,0 +1,148 @@
+{
+  "id": "bchydro-residential",
+  "version": "2026-04-01",
+  "label": "BC Hydro residential assumptions effective April 1, 2026",
+  "currency": "CAD",
+  "timezone": "Canada/Pacific",
+  "sourceNotes": [
+    "BC Hydro Electric Tariff PDF, effective April 1, 2026: https://app.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf",
+    "RS 1101 values from tariff section 1-1101: basic 23.44 cents/day, step 1 11.87 cents/kWh, step 2 14.08 cents/kWh.",
+    "RS 1151 values from tariff section 1-1151: basic 25.00 cents/day, energy 12.70 cents/kWh.",
+    "RS 2101 values from tariff section 1-2101: overnight -5 cents/kWh, off-peak 0, on-peak +5 cents/kWh; periods are 23:00-07:00, 07:00-16:00, 16:00-21:00, and 21:00-23:00.",
+    "The RS 1101 annual step-1 allowance is represented as 22.1918 kWh/day, derived from the tariff monthly and bi-monthly allowances and editable here.",
+    "Taxes and levies are disabled by default and should be enabled only when the user confirms applicability."
+  ],
+  "rounding": {
+    "displayDecimals": 2
+  },
+  "schedules": {
+    "RS1101": {
+      "id": "RS1101",
+      "label": "RS 1101 tiered",
+      "type": "tiered",
+      "basicChargePerDay": 0.2344,
+      "tiers": [
+        {
+          "id": "tier1",
+          "label": "Tier 1 energy",
+          "limitKwhPerDay": 22.1918,
+          "ratePerKwh": 0.1187
+        },
+        {
+          "id": "tier2",
+          "label": "Tier 2 energy",
+          "ratePerKwh": 0.1408
+        }
+      ],
+      "riders": [
+        {
+          "id": "RS1901",
+          "label": "Deferral Account Rate Rider",
+          "rate": -0.015,
+          "enabled": true,
+          "appliesTo": ["basic", "tierEnergy"]
+        },
+        {
+          "id": "RS1904",
+          "label": "Trade Income Rate Rider",
+          "rate": 0,
+          "enabled": true,
+          "appliesTo": ["basic", "tierEnergy"]
+        }
+      ]
+    },
+    "RS1151": {
+      "id": "RS1151",
+      "label": "RS 1151 flat",
+      "type": "flat",
+      "basicChargePerDay": 0.25,
+      "energyRatePerKwh": 0.127,
+      "riders": [
+        {
+          "id": "RS1901",
+          "label": "Deferral Account Rate Rider",
+          "rate": -0.015,
+          "enabled": true,
+          "appliesTo": ["basic", "baseEnergy"]
+        },
+        {
+          "id": "RS1904",
+          "label": "Trade Income Rate Rider",
+          "rate": 0,
+          "enabled": true,
+          "appliesTo": ["basic", "baseEnergy"]
+        }
+      ]
+    },
+    "RS2101": {
+      "id": "RS2101",
+      "label": "RS 2101 time bands",
+      "type": "timeOfDay",
+      "periods": [
+        {
+          "id": "overnight",
+          "label": "Overnight",
+          "startTime": "23:00",
+          "endTime": "07:00",
+          "adjustmentPerKwh": -0.05
+        },
+        {
+          "id": "off_peak_day",
+          "label": "Off-peak",
+          "startTime": "07:00",
+          "endTime": "16:00",
+          "adjustmentPerKwh": 0
+        },
+        {
+          "id": "on_peak",
+          "label": "On-peak",
+          "startTime": "16:00",
+          "endTime": "21:00",
+          "adjustmentPerKwh": 0.05
+        },
+        {
+          "id": "off_peak_late",
+          "label": "Off-peak",
+          "startTime": "21:00",
+          "endTime": "23:00",
+          "adjustmentPerKwh": 0
+        }
+      ],
+      "riders": []
+    }
+  },
+  "levies": [],
+  "taxes": [
+    {
+      "id": "GST",
+      "label": "Goods and Services Tax",
+      "rate": 0.05,
+      "enabled": false,
+      "appliesTo": ["subtotalBeforeTaxes"]
+    }
+  ],
+  "comparisonOptions": [
+    {
+      "id": "RS1101",
+      "label": "RS 1101",
+      "baseScheduleId": "RS1101"
+    },
+    {
+      "id": "RS1101_RS2101",
+      "label": "RS 1101 + RS 2101",
+      "baseScheduleId": "RS1101",
+      "timeOfDayScheduleId": "RS2101"
+    },
+    {
+      "id": "RS1151",
+      "label": "RS 1151",
+      "baseScheduleId": "RS1151"
+    },
+    {
+      "id": "RS1151_RS2101",
+      "label": "RS 1151 + RS 2101",
+      "baseScheduleId": "RS1151",
+      "timeOfDayScheduleId": "RS2101"
+    }
+  ]
+}

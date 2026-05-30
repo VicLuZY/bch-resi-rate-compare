@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+.playwright-cli/
+output/
+.agents/
+_git.ignore/
+skills-lock.json
+
+# Local BC Hydro exports may contain private account, meter, address, and usage data.
+bchydro.com-consumption-*.csv
+*.private.csv

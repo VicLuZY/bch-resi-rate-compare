@@ -1,0 +1,243 @@
+{
+  "utility": "BC Hydro",
+  "jurisdiction": "British Columbia, Canada",
+  "customer_class": "Residential",
+  "searched_on": "2026-05-24",
+  "currency": "CAD",
+  "energy_unit": "kWh",
+  "rate_values_unit": "cents",
+  "prices_before_taxes_and_levies": true,
+  "notes": [
+    "BC Hydro customer-facing pages say residential customers can choose between tiered and flat plans, and either can be combined with optional time-of-day pricing.",
+    "The BC Hydro Electric Tariff prevails if there is a difference between customer-facing pages and tariff text.",
+    "Time-of-day values are adjustments to the applicable underlying base residential rate, not a standalone base residential rate."
+  ],
+  "base_plans": [
+    {
+      "id": "residential_tiered_1101",
+      "name": "Residential Tiered Rate",
+      "tariff_schedule": "1101",
+      "effective_date": "2026-04-01",
+      "status": "current_selectable",
+      "availability": "Residential Service, at the customer's election, in the Integrated Service Area and Non-Integrated Service Area.",
+      "basic_charge_cents_per_day": 23.44,
+      "minimum_charge": "Basic charge",
+      "energy_charges": [
+        {
+          "tier": "Step 1",
+          "cents_per_kwh": 11.87,
+          "monthly_threshold_kwh": 675,
+          "bimonthly_threshold_kwh": 1350,
+          "daily_proration_kwh": 22.1918
+        },
+        {
+          "tier": "Step 2",
+          "cents_per_kwh": 14.08,
+          "threshold": "All additional kWh over the prorated Step 1 threshold."
+        }
+      ],
+      "rate_riders_apply": true,
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/tiered.html",
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    },
+    {
+      "id": "residential_flat_1151",
+      "name": "Residential Flat Rate",
+      "tariff_schedule": "1151",
+      "effective_date": "2026-04-01",
+      "status": "current_selectable",
+      "availability": "Residential Service, at the customer's election, in the Integrated Service Area and Non-Integrated Service Area.",
+      "basic_charge_cents_per_day": 25.0,
+      "minimum_charge": "Basic charge",
+      "energy_charges": [
+        {
+          "tier": "All usage",
+          "cents_per_kwh": 12.70
+        }
+      ],
+      "rate_riders_apply": true,
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/flat.html",
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    }
+  ],
+  "optional_add_ons": [
+    {
+      "id": "time_of_day_2101",
+      "name": "Residential Service - Time-of-Day",
+      "tariff_schedule": "2101",
+      "effective_date": "2025-04-01",
+      "status": "current_optional_add_on",
+      "availability": "For Residential Service at the customer's election, concurrently with Rate Schedule 1101 or 1151, including separately metered EV charging at a dwelling or premises also receiving service under 1101 or 1151.",
+      "not_available_for": [
+        "Separately metered common property of a multiple occupancy property."
+      ],
+      "adjustments": [
+        {
+          "period": "overnight",
+          "start_local_time": "23:00",
+          "end_local_time": "07:00",
+          "adjustment_cents_per_kwh": -5.0
+        },
+        {
+          "period": "off_peak_morning_afternoon",
+          "start_local_time": "07:00",
+          "end_local_time": "16:00",
+          "adjustment_cents_per_kwh": 0.0
+        },
+        {
+          "period": "on_peak",
+          "start_local_time": "16:00",
+          "end_local_time": "21:00",
+          "adjustment_cents_per_kwh": 5.0
+        },
+        {
+          "period": "off_peak_evening",
+          "start_local_time": "21:00",
+          "end_local_time": "23:00",
+          "adjustment_cents_per_kwh": 0.0
+        }
+      ],
+      "pre_rider_effective_energy_prices_cents_per_kwh": [
+        {
+          "base_component": "Tiered Step 1",
+          "overnight": 6.87,
+          "off_peak": 11.87,
+          "on_peak": 16.87
+        },
+        {
+          "base_component": "Tiered Step 2",
+          "overnight": 9.08,
+          "off_peak": 14.08,
+          "on_peak": 19.08
+        },
+        {
+          "base_component": "Flat",
+          "overnight": 7.70,
+          "off_peak": 12.70,
+          "on_peak": 17.70
+        }
+      ],
+      "rate_riders_apply_to_this_schedule": false,
+      "net_metering_note": "For customers receiving service under Rate Schedule 1289, the overnight credit and on-peak charge apply only to hourly deliveries of energy by BC Hydro.",
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/time-of-day.html",
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    }
+  ],
+  "rate_riders": [
+    {
+      "id": "deferral_account_rate_rider_1901",
+      "name": "Deferral Account Rate Rider",
+      "tariff_schedule": "1901",
+      "effective_date": "2026-04-01",
+      "percent": -1.5,
+      "applies_before_taxes_and_levies": true,
+      "excluded_schedules": [
+        "2101",
+        "3817",
+        "Electric Tariff Supplement Nos. 7, 8, 39, 77 and 94"
+      ],
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates.html",
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    },
+    {
+      "id": "trade_income_rate_rider_1904",
+      "name": "Trade Income Rate Rider",
+      "tariff_schedule": "1904",
+      "effective_date": "2026-04-01",
+      "percent": 0.0,
+      "applies_before_taxes_and_levies": true,
+      "excluded_schedules": [
+        "2101",
+        "3817",
+        "Electric Tariff Supplement Nos. 7, 8, 39, 77 and 94"
+      ],
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates.html",
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    }
+  ],
+  "special_or_legacy_residential_schedules": [
+    {
+      "id": "residential_dual_fuel_closed_1105",
+      "name": "Residential Service - Dual Fuel (Closed)",
+      "tariff_schedule": "1105",
+      "effective_date": "2026-04-01",
+      "status": "closed_legacy",
+      "availability": "Separately metered residential space heating and water heating only; available only for premises served under this schedule on 1990-01-15 and continuously thereafter, and only where there has been no change in customer since 2008-04-01.",
+      "energy_charge_cents_per_kwh": 12.61,
+      "new_or_additional_load_permitted": false,
+      "rate_riders_apply": true,
+      "source_urls": [
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    },
+    {
+      "id": "net_metering_1289",
+      "name": "Net Metering Service",
+      "tariff_schedule": "1289",
+      "effective_date": "2025-04-01",
+      "status": "current_special_service",
+      "is_base_purchase_rate": false,
+      "availability": "Eligible customer-owned clean/renewable generating facilities with nameplate rating not more than 100 kW, connected at the same point of delivery as the served premises.",
+      "billing": "Net consumption is billed under the applicable underlying rate schedule. Surplus generation remaining at the anniversary date is paid under the tariff energy price.",
+      "surplus_energy_price": "For applications accepted on or after 2019-04-29, calculated every January 1 based on daily average Mid-Columbia prices for the previous calendar year, converted to Canadian dollars using the Bank of Canada average annual exchange rate. The older 9.99 cents/kWh transitional price expired 2024-04-30.",
+      "rate_riders_apply": true,
+      "source_urls": [
+        "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+      ]
+    }
+  ],
+  "not_current_residential_options": [
+    {
+      "name": "Non-integrated area Zone II and Zone IB rates",
+      "status": "no_longer_available",
+      "not_available_as_of": "2025-04-01",
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/non-integrated-areas.html"
+      ]
+    },
+    {
+      "name": "Multi-residential service rates",
+      "status": "no_longer_available",
+      "not_available_as_of": "2025-04-01",
+      "source_urls": [
+        "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/non-integrated-areas.html"
+      ]
+    }
+  ],
+  "official_sources": [
+    {
+      "name": "BC Hydro residential rates",
+      "url": "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates.html"
+    },
+    {
+      "name": "BC Hydro residential tiered rate",
+      "url": "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/tiered.html"
+    },
+    {
+      "name": "BC Hydro residential flat rate",
+      "url": "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/flat.html"
+    },
+    {
+      "name": "BC Hydro time-of-day pricing",
+      "url": "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/time-of-day.html"
+    },
+    {
+      "name": "BC Hydro non-integrated area rates",
+      "url": "https://app.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/non-integrated-areas.html"
+    },
+    {
+      "name": "BC Hydro Electric Tariff PDF",
+      "url": "https://www.bchydro.com/content/dam/BCHydro/customer-portal/documents/corporate/tariff-filings/electric-tariff/bchydro-electric-tariff.pdf"
+    }
+  ]
+}
