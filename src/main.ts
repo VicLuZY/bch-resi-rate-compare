@@ -1,8 +1,4 @@
 import "./styles.css";
-import { parseConsumptionFiles, type TextFileInput } from "./domain/csv";
-import { comparisonSummaryCsv, rankedTotals, validationReportCsv } from "./domain/export";
-import { calculateAverageComparisons, validateRateConfig } from "./domain/rates";
-import { analyzeUploads, intervalsForPeriod } from "./domain/validation";
 import type {
   AnalysisPeriod,
   AppliedPercentage,
@@ -20,6 +16,11 @@ import type {
   UploadAnalysis,
   ValidationIssue,
 } from "./domain/types";
+
+type TextFileInput = {
+  name: string;
+  text: string;
+};
 
 const DEFAULT_RATE_CONFIG_URL = `${import.meta.env.BASE_URL}rates/bchydro-residential-2026-04-01.json`;
 const BC_HYDRO_DATA_EXPORT_URL =
@@ -42,8 +43,16 @@ const EXAMPLE_EXPORTS = [
   },
 ] as const;
 
+let analyzeUploadsFn: typeof import("./domain/validation").analyzeUploads | undefined;
+let intervalsForPeriodFn: typeof import("./domain/validation").intervalsForPeriod | undefined;
+let calculateAverageComparisonsFn:
+  | typeof import("./domain/rates").calculateAverageComparisons
+  | undefined;
+let validateRateConfigFn: typeof import("./domain/rates").validateRateConfig | undefined;
+
 interface AppState {
   rateConfig?: RateConfig;
+  rateConfigLoading: boolean;
   rateConfigUserModified: boolean;
   rateAssumptionsExpanded: boolean;
   rateAssumptionsUnlocked: boolean;
@@ -55,9 +64,11 @@ interface AppState {
   selectedPeriodIndex: Record<string, number>;
   loadError?: string;
   exampleLoadError?: string;
+  comparisonCopyStatus?: "copied" | "error";
 }
 
 const state: AppState = {
+  rateConfigLoading: true,
   rateConfigUserModified: false,
   rateAssumptionsExpanded: false,
   rateAssumptionsUnlocked: false,
@@ -73,12 +84,18 @@ const appRoot = root;
 void init();
 
 async function init(): Promise<void> {
+  state.rateConfigLoading = true;
+  state.loadError = undefined;
+  render();
+
   try {
     const response = await fetch(DEFAULT_RATE_CONFIG_URL);
     const config = (await response.json()) as RateConfig;
     state.rateConfig = config;
   } catch (error) {
     state.loadError = error instanceof Error ? error.message : String(error);
+  } finally {
+    state.rateConfigLoading = false;
   }
   render();
 }
@@ -86,17 +103,29 @@ async function init(): Promise<void> {
 function render(): void {
   const selectedMeter = currentMeter();
   const selectedPeriods = selectedMeter ? currentPeriods(selectedMeter) : [];
-  const configErrors = state.rateConfig ? validateRateConfig(state.rateConfig) : [];
+  const configErrors = state.rateConfig && validateRateConfigFn
+    ? validateRateConfigFn(state.rateConfig)
+    : [];
   let comparison: ComparisonBundle | undefined;
   let calculationError: string | undefined;
 
-  if (selectedMeter && selectedPeriods.length && state.rateConfig && canCalculate(selectedMeter)) {
+  if (
+    selectedMeter &&
+    selectedPeriods.length &&
+    state.rateConfig &&
+    calculateAverageComparisonsFn &&
+    canCalculate(selectedMeter)
+  ) {
     if (configErrors.length) {
       calculationError =
         "Rate assumptions need attention before a comparison can be calculated.";
     } else {
       try {
-        comparison = calculateAverageComparisons(selectedMeter, selectedPeriods, state.rateConfig);
+        comparison = calculateAverageComparisonsFn(
+          selectedMeter,
+          selectedPeriods,
+          state.rateConfig,
+        );
       } catch (error) {
         calculationError = error instanceof Error ? error.message : String(error);
       }
@@ -104,14 +133,9 @@ function render(): void {
   }
 
   appRoot.innerHTML = `
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Local-first residential analysis</p>
-        <h1>BC Hydro rate comparator</h1>
-      </div>
-      <div class="privacy-note">Files stay in this browser session.</div>
-    </header>
-    <main class="workspace ${state.upload ? "" : "landing-workspace"}">
+    <a class="skip-link" href="#mainContent">Skip to calculator</a>
+    ${renderHero(comparison, selectedMeter, selectedPeriods)}
+    <main id="mainContent" class="workspace ${state.upload ? "" : "landing-workspace"}">
       <aside class="sidebar">
         ${renderUploadPanel()}
         ${renderAssumptionsPanel()}
@@ -127,6 +151,85 @@ function render(): void {
   `;
 
   bindEvents();
+}
+
+function renderHero(
+  comparison?: ComparisonBundle,
+  selectedMeter?: MeterAnalysis,
+  selectedPeriods: AnalysisPeriod[] = [],
+): string {
+  const uploadCount = state.upload?.files.length ?? 0;
+  const meterCount = state.upload?.meters.length ?? 0;
+  const selectedSummary = summarizePeriods(selectedPeriods);
+  const best = comparison?.results[0];
+  const configStatus = state.rateConfigLoading
+    ? "Loading rates"
+    : state.loadError
+      ? "Rates unavailable"
+      : "Rates ready";
+
+  return `
+    <header class="site-hero">
+      <div class="hero-nav" aria-label="Site">
+        <div class="brand-lockup" aria-label="BC Hydro residential rate comparator">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Residential rate comparator</span>
+        </div>
+        <div class="privacy-note">Local-first analysis. Uploaded files stay in this browser session.</div>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">BC residential electricity rate comparison</p>
+          <h1>See which residential rate option best fits your hourly use.</h1>
+          <p class="hero-lede">Upload BC Hydro interval CSV exports, validate the meter history, compare annual totals, and review the assumptions before exporting a customer-readable summary.</p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#fileInput">Upload CSV exports</a>
+            <a class="secondary-link" href="${BC_HYDRO_DATA_EXPORT_URL}" target="_blank" rel="noreferrer">Get BC Hydro data</a>
+          </div>
+          <div class="progress-chips" aria-label="Comparison progress">
+            ${renderProgressChip("Upload", uploadCount ? `${uploadCount} file${uploadCount === 1 ? "" : "s"}` : "Start", uploadCount > 0, !uploadCount)}
+            ${renderProgressChip("Validate", meterCount ? `${meterCount} meter${meterCount === 1 ? "" : "s"}` : "Waiting", Boolean(selectedMeter), Boolean(uploadCount && !selectedMeter))}
+            ${renderProgressChip("Compare", best ? formatCurrency(best.totalCost) : "Waiting", Boolean(best), Boolean(selectedMeter && !best))}
+            ${renderProgressChip("Export", best ? "Ready" : "Waiting", Boolean(best), false)}
+          </div>
+        </div>
+        <div class="hero-visual" aria-label="Current comparison status">
+          <div class="status-card">
+            <span class="status-badge ${state.loadError ? "bad" : state.rateConfigLoading ? "info" : "good"}">${configStatus}</span>
+            <strong>${best ? escapeHtml(best.label) : "No annual comparison yet"}</strong>
+            <p>${best ? `${formatCurrency(best.totalCost)} estimated annual total for ${formatKwh(best.totalKwh)}.` : "Upload at least one complete continuous local year to unlock ranked annual costs."}</p>
+          </div>
+          <div class="hero-meter" aria-hidden="true">
+            ${Array.from({ length: 28 }, (_, index) => `<span style="--i:${index}"></span>`).join("")}
+          </div>
+          <div class="hero-stats">
+            <div>
+              <span>Annual usage</span>
+              <strong>${selectedPeriods.length ? formatKwh(selectedSummary.totalKwh) : "Pending"}</strong>
+            </div>
+            <div>
+              <span>Service days</span>
+              <strong>${selectedPeriods.length ? formatNumber(selectedSummary.serviceDays) : "Pending"}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  `;
+}
+
+function renderProgressChip(
+  label: string,
+  value: string,
+  complete: boolean,
+  current: boolean,
+): string {
+  return `
+    <span class="progress-chip ${complete ? "complete" : ""} ${current ? "current" : ""}">
+      <strong>${escapeHtml(label)}</strong>
+      <em>${escapeHtml(value)}</em>
+    </span>
+  `;
 }
 
 function renderSiteFooter(): string {
@@ -150,14 +253,17 @@ function renderSiteFooter(): string {
 function renderUploadPanel(): string {
   const files = state.upload?.files ?? [];
   return `
-    <section class="panel">
+    <section class="panel intake-panel" aria-labelledby="uploadHeading">
       <div class="panel-heading">
-        <h2>Upload exports</h2>
-        <p>Use one or more interval CSV exports. Segments for the same meter are merged.</p>
+        <p class="section-kicker">Step 1</p>
+        <h2 id="uploadHeading">Upload interval exports</h2>
+        <p id="uploadHelp">Use one or more BC Hydro hourly CSV exports. Segments for the same meter are merged locally.</p>
       </div>
       <label class="drop-zone" for="fileInput">
-        <input id="fileInput" type="file" accept=".csv,text/csv" multiple />
-        <span>Choose CSV files</span>
+        <input id="fileInput" type="file" accept=".csv,text/csv" multiple aria-describedby="uploadHelp" />
+        <span class="drop-zone-icon" aria-hidden="true"></span>
+        <span class="drop-zone-main">Choose CSV files</span>
+        <span class="drop-zone-sub">Keyboard accessible. Multiple files supported.</span>
       </label>
       <div class="example-loader" aria-label="Load example CSVs">
         <div>
@@ -183,8 +289,8 @@ function renderUploadPanel(): string {
                 .map(
                   (file, index) => `
                     <div class="file-row">
-                      <strong>File ${index + 1}</strong>
-                      <span>${file.acceptedRows.toLocaleString()} rows</span>
+                      <span class="file-pill">File ${index + 1}</span>
+                      <strong>${file.acceptedRows.toLocaleString()} accepted rows</strong>
                       <span>${escapeHtml(file.firstLocal ?? "no start")} to ${escapeHtml(
                         file.lastLocal ?? "no end",
                       )}</span>
@@ -193,14 +299,16 @@ function renderUploadPanel(): string {
                 )
                 .join("")}
             </div>`
-          : `<p class="muted">No customer data is loaded.</p>`
+          : `<p class="empty-copy">No customer data is loaded. Use your own export or load an example profile.</p>`
       }
     </section>
   `;
 }
 
 function renderAssumptionsPanel(): string {
-  const configErrors = state.rateConfig ? validateRateConfig(state.rateConfig) : [];
+  const configErrors = state.rateConfig && validateRateConfigFn
+    ? validateRateConfigFn(state.rateConfig)
+    : [];
   const config = state.rateConfig;
   const isOpen = state.rateAssumptionsExpanded;
   const isUnlocked = state.rateAssumptionsUnlocked;
@@ -211,10 +319,11 @@ function renderAssumptionsPanel(): string {
           <button id="toggleAssumptions" class="assumptions-toggle" type="button" aria-expanded="false">
             <span>
               <strong>Rate assumptions</strong>
-              <small>No rate configuration loaded.</small>
+              <small>${state.rateConfigLoading ? "Loading bundled tariff assumptions." : "No rate configuration loaded."}</small>
             </span>
           </button>
         </div>
+        ${state.rateConfigLoading ? renderNotice("info", "Loading the bundled residential rate assumptions.") : ""}
       </section>
     `;
   }
@@ -544,15 +653,38 @@ function renderValidationPanel(
   }
 
   const meters = state.upload.meters;
+  const blockingCount =
+    state.upload.issues.filter((issue) => issue.severity === "error").length +
+    meters.reduce(
+      (total, meter) =>
+        total + meter.issues.filter((issue) => issue.severity === "error").length,
+      0,
+    );
+  const warningCount =
+    state.upload.issues.filter((issue) => issue.severity === "warning").length +
+    meters.reduce(
+      (total, meter) =>
+        total + meter.issues.filter((issue) => issue.severity === "warning").length,
+      0,
+    );
+  const statusClass = blockingCount ? "bad" : warningCount ? "warn" : "good";
+  const statusLabel = blockingCount
+    ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}`
+    : warningCount
+      ? `${warningCount} warning${warningCount === 1 ? "" : "s"}`
+      : "Ready to compare";
+
   return `
-    <section class="panel wide">
+    <section class="panel wide validation-panel" aria-labelledby="validationHeading">
       <div class="panel-heading split">
         <div>
-          <h2>Validation</h2>
+          <p class="section-kicker">Step 2</p>
+          <h2 id="validationHeading">Validation status</h2>
           <p>${meters.length} meter${meters.length === 1 ? "" : "s"} detected across ${
             state.upload.files.length
           } file${state.upload.files.length === 1 ? "" : "s"}.</p>
         </div>
+        <span class="status-badge ${statusClass}">${statusLabel}</span>
         ${
           meters.length
             ? `<select id="meterSelect" aria-label="Select meter">
@@ -712,11 +844,13 @@ function renderMeterMetadata(meter: MeterAnalysis): string {
 function renderResultsPanel(bundle: ComparisonBundle, meter: MeterAnalysis): string {
   const periodIntervals = intervalsForPeriods(meter.intervals, bundle.sourcePeriods);
   const periodCount = bundle.sourcePeriods.length;
+  const cheapest = Math.min(...bundle.results.map((item) => item.totalCost));
   return `
-    <section class="panel wide results report-surface">
-      <div class="panel-heading split">
+    <section class="panel wide results report-surface" aria-labelledby="resultsHeading">
+      <div class="panel-heading split results-heading">
         <div>
-          <h2>${bundle.isAverage ? "Average annual comparison" : "Annual comparison"}</h2>
+          <p class="section-kicker">Step 3</p>
+          <h2 id="resultsHeading">${bundle.isAverage ? "Average annual comparison" : "Annual comparison"}</h2>
           <p>${
             bundle.isAverage
               ? `${periodCount} complete years averaged from ${escapeHtml(
@@ -729,39 +863,67 @@ function renderResultsPanel(bundle: ComparisonBundle, meter: MeterAnalysis): str
                 )}; ${formatKwh(bundle.period.totalKwh)}.`
           }</p>
         </div>
-        <div class="button-row compact">
-          <button id="downloadComparison" type="button">Export summary CSV</button>
-          <button id="printReport" type="button" class="secondary">Print report</button>
-        </div>
       </div>
       ${renderInsightSummary(bundle)}
       ${renderCostComparisonDashboard(bundle)}
+      ${renderRateCalculationSection(bundle, meter, cheapest)}
       ${renderUsageDashboard(periodIntervals, bundle)}
-      <table class="results-table">
-        <thead>
-          <tr>
-            <th>Option</th>
-            <th>Total</th>
-            <th>Difference from cheapest</th>
-            <th>% above cheapest</th>
-            <th>Annual kWh</th>
-            <th>Tier allocation</th>
-            <th>Time-band adjustments</th>
-          </tr>
-        </thead>
-      <tbody>
-          ${bundle.results
-            .map((result) =>
-              renderResultRow(
-                result,
-                Math.min(...bundle.results.map((item) => item.totalCost)),
-              ),
-            )
-            .join("")}
-        </tbody>
-      </table>
-      <div class="details-list">
-        ${bundle.results.map((result) => renderResultDetails(result, meter)).join("")}
+      <div class="visual-section export-section" aria-labelledby="exportHeading">
+        <div class="section-title">
+          <div>
+            <p class="section-kicker">Step 5</p>
+            <h3 id="exportHeading">Export or share</h3>
+          </div>
+          <span>CSV, print, and copied summaries use the same annual totals shown on this screen.</span>
+        </div>
+        <div class="export-card">
+          <div>
+            <strong>${escapeHtml(bundle.results[0].label)} is lowest at ${formatCurrency(bundle.results[0].totalCost)}</strong>
+            <span>${formatKwh(bundle.period.totalKwh)} ${bundle.isAverage ? "average annual" : "annual"} usage; ${bundle.results.length} rate options compared.</span>
+          </div>
+          <div class="button-row compact">
+            <button id="copyComparison" type="button" class="secondary">Copy summary</button>
+            <button id="downloadComparison" type="button">Export summary CSV</button>
+            <button id="printReport" type="button" class="secondary">Print report</button>
+          </div>
+        </div>
+        ${
+          state.comparisonCopyStatus
+            ? renderNotice(
+                state.comparisonCopyStatus === "copied" ? "good" : "error",
+                state.comparisonCopyStatus === "copied"
+                  ? "Summary copied with the same totals shown above."
+                  : "Unable to copy the summary. Use export CSV or print instead.",
+              )
+            : ""
+        }
+      </div>
+      <div class="visual-section table-section" aria-labelledby="tableHeading">
+        <div class="section-title">
+          <h3 id="tableHeading">Detailed comparison table</h3>
+          <span>Mobile screens show the same rows as compact cards below the table.</span>
+        </div>
+        <div class="table-scroll" tabindex="0" aria-label="Detailed rate comparison table">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Total</th>
+                <th>Difference from cheapest</th>
+                <th>% above cheapest</th>
+                <th>Annual kWh</th>
+                <th>Tier allocation</th>
+                <th>Time-band adjustments</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${bundle.results.map((result) => renderResultRow(result, cheapest)).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="results-table-mobile" aria-label="Detailed comparison rows">
+          ${bundle.results.map((result) => renderResultMobileCard(result, cheapest)).join("")}
+        </div>
       </div>
     </section>
   `;
@@ -779,6 +941,26 @@ function renderResultRow(result: RateComparisonResult, cheapest: number): string
       <td>${renderTierSummary(result)}</td>
       <td>${renderTodSummary(result)}</td>
     </tr>
+  `;
+}
+
+function renderResultMobileCard(result: RateComparisonResult, cheapest: number): string {
+  const difference = result.totalCost - cheapest;
+  return `
+    <article class="mobile-data-card">
+      <div>
+        <span>Rate option</span>
+        <strong>${escapeHtml(result.label)}</strong>
+      </div>
+      <dl>
+        <div><dt>Total</dt><dd>${formatCurrency(result.totalCost)}</dd></div>
+        <div><dt>Difference</dt><dd>${formatCurrency(difference)}</dd></div>
+        <div><dt>Percent above lowest</dt><dd>${formatPercent(cheapest ? difference / cheapest : 0)}</dd></div>
+        <div><dt>Annual kWh</dt><dd>${formatKwh(result.totalKwh)}</dd></div>
+      </dl>
+      ${result.tierAllocation ? `<p>${renderTierSummary(result)}</p>` : ""}
+      ${result.timeOfDayAllocation ? `<p>${renderTodSummary(result)}</p>` : ""}
+    </article>
   `;
 }
 
@@ -849,8 +1031,9 @@ function renderInsightSummary(bundle: ComparisonBundle): string {
 }
 
 function renderCostComparisonDashboard(bundle: ComparisonBundle): string {
-  const ranking = rankedTotals(bundle.results);
+  const ranking = rankedTotalsForDisplay(bundle.results);
   const maxTotal = Math.max(...bundle.results.map((result) => result.totalCost));
+  const cheapest = Math.min(...bundle.results.map((result) => result.totalCost));
   return `
     <div class="visual-section">
       <div class="section-title">
@@ -875,7 +1058,7 @@ function renderCostComparisonDashboard(bundle: ComparisonBundle): string {
                 <span>${escapeHtml(row.option)}</span>
                 <div><b style="width:${width}%"></b></div>
                 <strong>${formatCurrency(row.total)}</strong>
-                <em>${formatPercent(maxTotal ? row.total / maxTotal : 0)} of highest</em>
+                <em>${row.total === cheapest ? "Lowest annual total" : `${formatCurrency(row.total - cheapest)} more`}</em>
               </div>
             `;
           })
@@ -883,6 +1066,148 @@ function renderCostComparisonDashboard(bundle: ComparisonBundle): string {
       </div>
       ${renderCostStackBars(bundle)}
     </div>
+  `;
+}
+
+function rankedTotalsForDisplay(
+  results: RateComparisonResult[],
+): Array<{ option: string; total: number }> {
+  return [...results]
+    .sort((left, right) => left.totalCost - right.totalCost)
+    .map((result) => ({ option: result.label, total: result.totalCost }));
+}
+
+function renderRateCalculationSection(
+  bundle: ComparisonBundle,
+  meter: MeterAnalysis,
+  cheapest: number,
+): string {
+  return `
+    <div class="visual-section calculation-section" aria-labelledby="calculationHeading">
+      <div class="section-title">
+        <div>
+          <p class="section-kicker">Step 4</p>
+          <h3 id="calculationHeading">Rate-by-rate calculation illustration</h3>
+        </div>
+        <span>Each card expands to show how the displayed annual total is composed.</span>
+      </div>
+      <div class="rate-card-grid">
+        ${bundle.results
+          .map((result, index) => renderRateCalculationCard(result, meter, cheapest, index))
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderRateCalculationCard(
+  result: RateComparisonResult,
+  meter: MeterAnalysis,
+  cheapest: number,
+  index: number,
+): string {
+  const difference = result.totalCost - cheapest;
+  const groups = componentGroups(result);
+  const positiveTotal = Math.max(
+    1,
+    groups
+      .filter((group) => group.amount > 0)
+      .reduce((total, group) => total + group.amount, 0),
+  );
+
+  return `
+    <article class="rate-card ${difference === 0 ? "best" : ""}">
+      <div class="rate-card-top">
+        <span class="rank-badge">#${index + 1}</span>
+        <div>
+          <h4>${escapeHtml(result.label)}</h4>
+          <p>${result.timeOfDayAllocation ? "Base schedule plus time-band adjustment" : "Base schedule only"}</p>
+        </div>
+      </div>
+      <div class="rate-card-total">
+        <span>${difference === 0 ? "Lowest annual total" : "Annual total"}</span>
+        <strong>${formatCurrency(result.totalCost)}</strong>
+        <em>${difference === 0 ? "Best option for this upload" : `${formatCurrency(difference)} more than the lowest option`}</em>
+      </div>
+      <div class="mini-stack" role="img" aria-label="Cost component shares for ${escapeAttribute(result.label)}">
+        ${groups
+          .filter((group) => group.amount > 0)
+          .map(
+            (group) =>
+              `<span class="${escapeAttribute(group.className)}" style="width:${(group.amount / positiveTotal) * 100}%"></span>`,
+          )
+          .join("")}
+      </div>
+      <details class="calculation-details" open>
+        <summary>
+          <span>Calculation illustration</span>
+          <strong>${formatKwh(result.totalKwh)}</strong>
+        </summary>
+        <div class="formula-strip">
+          ${result.components
+            .map(
+              (component) => `
+                <div>
+                  <span>${escapeHtml(component.label)}</span>
+                  <strong>${formatCurrency(component.amount)}</strong>
+                  <em>${component.quantity === undefined ? "Fixed or derived adjustment" : `${formatQuantity(component.quantity, component.unit)} × ${component.rate === undefined ? "derived rate" : formatRate(component.rate, component.unit)}`}</em>
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+        <div class="component-table-wrap">
+          <table class="component-table">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Quantity</th>
+                <th>Rate</th>
+                <th>Amount</th>
+                <th>Trace</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${result.components
+                .map(
+                  (component) => `
+                    <tr>
+                      <td>${escapeHtml(component.label)}</td>
+                      <td>${component.quantity === undefined ? "" : formatQuantity(component.quantity, component.unit)}</td>
+                      <td>${component.rate === undefined ? "" : formatRate(component.rate, component.unit)}</td>
+                      <td>${formatCurrency(component.amount)}</td>
+                      <td>${renderTrace(component.trace)}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="component-mobile-list" aria-label="${escapeAttribute(result.label)} calculation rows">
+          ${result.components
+            .map(
+              (component) => `
+                <article class="mobile-data-card compact">
+                  <div>
+                    <span>Component</span>
+                    <strong>${escapeHtml(component.label)}</strong>
+                  </div>
+                  <dl>
+                    <div><dt>Quantity</dt><dd>${component.quantity === undefined ? "Fixed or derived" : formatQuantity(component.quantity, component.unit)}</dd></div>
+                    <div><dt>Rate</dt><dd>${component.rate === undefined ? "Derived" : formatRate(component.rate, component.unit)}</dd></div>
+                    <div><dt>Amount</dt><dd>${formatCurrency(component.amount)}</dd></div>
+                    <div><dt>Trace</dt><dd>${renderTrace(component.trace) || "Not applicable"}</dd></div>
+                  </dl>
+                </article>
+              `,
+            )
+            .join("")}
+        </div>
+        <p class="muted">Trace uses source row numbers from the uploaded files. Private file names, account numbers, and addresses are not shown.</p>
+        ${renderMeterScope(meter)}
+      </details>
+    </article>
   `;
 }
 
@@ -1262,7 +1587,7 @@ function renderHeatmap(intervals: NormalizedInterval[]): string {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   return `
-    <div class="heatmap">
+    <div class="heatmap" tabindex="0" role="img" aria-label="Day and hour electricity use intensity heatmap">
       <div></div>
       ${Array.from({ length: 24 }, (_, hour) => `<span>${hour}</span>`).join("")}
       ${days
@@ -1314,7 +1639,7 @@ function renderTimeOfDayBands(bundle: ComparisonBundle): string {
           <em>${premium ? formatKwh(premium.kwh) : "0 kWh"} at ${premium ? formatCentsPerKwh(premium.adjustment) : "+5c/kWh"}</em>
         </div>
       </div>
-      <div class="tod-clock" aria-label="24 hour time-band adjustment map">
+      <div class="tod-clock" role="img" aria-label="24 hour time-band adjustment map">
         ${Array.from({ length: 24 }, (_, hour) => {
           const period = findTodPeriodForHour(schedule, hour);
           const adjustment = roundAdjustment(period.adjustmentPerKwh);
@@ -1486,7 +1811,7 @@ function renderIssue(issue: ValidationIssue): string {
   `;
 }
 
-function renderNotice(kind: "good" | "error", message: string): string {
+function renderNotice(kind: "good" | "info" | "warning" | "error", message: string): string {
   return `<div class="notice ${kind}">${escapeHtml(message)}</div>`;
 }
 
@@ -1556,21 +1881,78 @@ function bindEvents(): void {
     const meter = currentMeter();
     const periods = meter ? currentPeriods(meter) : [];
     if (meter && periods.length && state.rateConfig) {
-      const bundle = calculateAverageComparisons(meter, periods, state.rateConfig);
-      downloadText("bchydro-rate-comparison.csv", comparisonSummaryCsv(bundle));
+      void Promise.all([loadRatesModule(), import("./domain/export")]).then(([, { comparisonSummaryCsv }]) => {
+        const bundle = calculateAverageComparisonsFn!(meter, periods, state.rateConfig!);
+        downloadText("bchydro-rate-comparison.csv", comparisonSummaryCsv(bundle));
+      });
     }
+  });
+
+  document.querySelector<HTMLButtonElement>("#copyComparison")?.addEventListener("click", () => {
+    void copyCurrentComparisonSummary();
   });
 
   document.querySelector<HTMLButtonElement>("#downloadValidation")?.addEventListener("click", () => {
     const meter = currentMeter();
     if (meter) {
-      downloadText("bchydro-validation-report.csv", validationReportCsv(meter));
+      void import("./domain/export").then(({ validationReportCsv }) => {
+        downloadText("bchydro-validation-report.csv", validationReportCsv(meter));
+      });
     }
   });
 
   document.querySelector<HTMLButtonElement>("#printReport")?.addEventListener("click", () => {
     window.print();
   });
+}
+
+async function copyCurrentComparisonSummary(): Promise<void> {
+  const meter = currentMeter();
+  const periods = meter ? currentPeriods(meter) : [];
+  if (!meter || !periods.length || !state.rateConfig) {
+    state.comparisonCopyStatus = "error";
+    render();
+    return;
+  }
+
+  try {
+    await loadRatesModule();
+    const bundle = calculateAverageComparisonsFn!(meter, periods, state.rateConfig);
+    await navigator.clipboard.writeText(comparisonSummaryText(bundle));
+    state.comparisonCopyStatus = "copied";
+  } catch {
+    state.comparisonCopyStatus = "error";
+  }
+
+  render();
+  window.setTimeout(() => {
+    state.comparisonCopyStatus = undefined;
+    render();
+  }, 3200);
+}
+
+function comparisonSummaryText(bundle: ComparisonBundle): string {
+  const lines = [
+    "BC Hydro residential rate comparison",
+    `${bundle.isAverage ? "Average annual" : "Annual"} period: ${bundle.period.startLocal} to ${bundle.period.endLocal}`,
+    `Usage: ${formatKwh(bundle.period.totalKwh)}`,
+    "",
+    "Ranked annual totals:",
+  ];
+
+  bundle.results.forEach((result, index) => {
+    const cheapest = bundle.results[0].totalCost;
+    const delta = result.totalCost - cheapest;
+    lines.push(
+      `${index + 1}. ${result.label}: ${formatCurrency(result.totalCost)} (${formatCurrency(delta)} from lowest; ${formatKwh(result.totalKwh)})`,
+    );
+  });
+
+  lines.push("");
+  lines.push(
+    "Calculator results are estimates for comparison only and are not a BC Hydro bill or official tariff interpretation.",
+  );
+  return lines.join("\n");
 }
 
 function applyRateControl(input: HTMLInputElement): void {
@@ -1596,6 +1978,7 @@ function applyRateControl(input: HTMLInputElement): void {
 
   setPathValue(state.rateConfig, path, value);
   state.rateConfigUserModified = true;
+  state.comparisonCopyStatus = undefined;
   if (state.upload) {
     rebuildAnalysis();
   }
@@ -1615,7 +1998,7 @@ async function handleFiles(files: File[]): Promise<void> {
   const textFiles: TextFileInput[] = await Promise.all(
     files.map(async (file) => ({ name: file.name, text: await file.text() })),
   );
-  handleTextFiles(textFiles);
+  await handleTextFiles(textFiles);
 }
 
 async function handleExampleLoad(exampleId: string): Promise<void> {
@@ -1629,7 +2012,7 @@ async function handleExampleLoad(exampleId: string): Promise<void> {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    handleTextFiles([{ name: example.fileName, text: await response.text() }]);
+    await handleTextFiles([{ name: example.fileName, text: await response.text() }]);
   } catch (error) {
     state.exampleLoadError = `Unable to load ${example.label}: ${
       error instanceof Error ? error.message : String(error)
@@ -1638,12 +2021,18 @@ async function handleExampleLoad(exampleId: string): Promise<void> {
   }
 }
 
-function handleTextFiles(textFiles: TextFileInput[]): void {
+async function handleTextFiles(textFiles: TextFileInput[]): Promise<void> {
+  const [{ parseConsumptionFiles }, { analyzeUploads }] = await Promise.all([
+    import("./domain/csv"),
+    loadValidationModule(),
+    loadRatesModule(),
+  ]);
   const parsed = parseConsumptionFiles(textFiles);
   state.parsedRecords = parsed.records;
   state.fileSummaries = parsed.fileSummaries;
   state.parseIssues = parsed.issues;
   state.exampleLoadError = undefined;
+  state.comparisonCopyStatus = undefined;
   state.upload = analyzeUploads(
     parsed.records,
     parsed.fileSummaries,
@@ -1659,8 +2048,11 @@ function rebuildAnalysis(): void {
   if (!state.parsedRecords || !state.fileSummaries || !state.parseIssues) {
     return;
   }
+  if (!analyzeUploadsFn) {
+    return;
+  }
 
-  state.upload = analyzeUploads(
+  state.upload = analyzeUploadsFn(
     state.parsedRecords,
     state.fileSummaries,
     state.parseIssues,
@@ -1715,7 +2107,25 @@ function intervalsForPeriods(
   intervals: NormalizedInterval[],
   periods: AnalysisPeriod[],
 ): NormalizedInterval[] {
-  return periods.flatMap((period) => intervalsForPeriod(intervals, period));
+  if (!intervalsForPeriodFn) {
+    return [];
+  }
+
+  return periods.flatMap((period) => intervalsForPeriodFn!(intervals, period));
+}
+
+async function loadValidationModule(): Promise<typeof import("./domain/validation")> {
+  const module = await import("./domain/validation");
+  analyzeUploadsFn = module.analyzeUploads;
+  intervalsForPeriodFn = module.intervalsForPeriod;
+  return module;
+}
+
+async function loadRatesModule(): Promise<typeof import("./domain/rates")> {
+  const module = await import("./domain/rates");
+  calculateAverageComparisonsFn = module.calculateAverageComparisons;
+  validateRateConfigFn = module.validateRateConfig;
+  return module;
 }
 
 function summarizePeriods(periods: AnalysisPeriod[]): AnalysisPeriod {

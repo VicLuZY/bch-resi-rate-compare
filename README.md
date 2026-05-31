@@ -51,4 +51,20 @@ npm test
 npm run build
 ```
 
+UI evidence checks:
+
+```bash
+npm run build
+npm run preview -- --port 4173
+npm run verify:ui
+```
+
+To simulate the GitHub Pages build path locally:
+
+```bash
+GITHUB_ACTIONS=true npm run build
+GITHUB_ACTIONS=true npm run preview -- --port 4173
+UI_CHECK_URL=http://127.0.0.1:4173/bch-resi-rate-compare/ npm run verify:ui
+```
+
 Local BC Hydro exports may contain private identifiers and are ignored by `.gitignore`.
