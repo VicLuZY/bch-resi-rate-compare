@@ -1,8 +1,8 @@
 # BC Hydro Residential Rates
 
-Searched and saved: 2026-05-24.
+Reference date: 2026-05-24.
 
-The rates below are the current BC Hydro residential electricity rates found in official BC Hydro sources. Customer-facing rate pages list two base residential plans, tiered and flat, and optional time-of-day pricing that can be combined with either plan. The Electric Tariff prevails if there is any difference between summaries and tariff text.
+The rates below list current BC Hydro residential electricity rates from official BC Hydro sources. Customer-facing rate pages list two base residential plans, tiered and flat, and optional time-of-day pricing that can be combined with either plan. The Electric Tariff prevails if there is any difference between summaries and tariff text.
 
 All prices are before taxes and levies unless noted. Energy prices are in cents per kWh and fixed charges are in cents per day.
 

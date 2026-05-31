@@ -3,7 +3,7 @@ import type { RateConfig } from "../src/domain/types";
 
 export const TEST_TIMEZONE = "Canada/Pacific";
 
-export interface SyntheticRow {
+export interface ReferenceRow {
   meter: string;
   account: string;
   localStart: string;
@@ -14,13 +14,13 @@ export interface SyntheticRow {
   city?: string;
 }
 
-export const syntheticRateConfig: RateConfig = {
-  id: "synthetic-benchmark",
+export const referenceRateConfig: RateConfig = {
+  id: "rate-benchmark",
   version: "test",
-  label: "Synthetic benchmark rates",
+  label: "Benchmark rates",
   currency: "CAD",
   timezone: TEST_TIMEZONE,
-  sourceNotes: ["Synthetic fixture; not tariff data."],
+  sourceNotes: ["Reference rate data."],
   rounding: { displayDecimals: 2 },
   schedules: {
     RS1101: {
@@ -130,19 +130,19 @@ export const syntheticRateConfig: RateConfig = {
   taxes: [],
 };
 
-export function generateRows(options: {
+export function rowsForPeriod(options: {
   start: string;
   end: string;
   meter?: string;
   account?: string;
   kwh?: number | ((dateTime: Temporal.ZonedDateTime) => number);
   estimatedEvery?: number;
-}): SyntheticRow[] {
+}): ReferenceRow[] {
   const meter = options.meter ?? "MTR0001";
-  const account = options.account ?? "SYNTHETIC-ACCOUNT";
+  const account = options.account ?? "REFERENCE-ACCOUNT";
   const start = Temporal.ZonedDateTime.from(`${options.start}[${TEST_TIMEZONE}]`);
   const end = Temporal.ZonedDateTime.from(`${options.end}[${TEST_TIMEZONE}]`);
-  const rows: SyntheticRow[] = [];
+  const rows: ReferenceRow[] = [];
   let epochMs = start.epochMilliseconds;
   let index = 0;
   while (epochMs < end.epochMilliseconds) {
@@ -162,8 +162,8 @@ export function generateRows(options: {
           : (options.kwh ?? 1),
       estimated:
         options.estimatedEvery !== undefined && index % options.estimatedEvery === 0,
-      address: "SYNTHETIC SERVICE ADDRESS",
-      city: "SAMPLE CITY",
+      address: "REFERENCE SERVICE ADDRESS",
+      city: "TEST CITY",
     });
     epochMs += 3_600_000;
     index += 1;
@@ -171,7 +171,7 @@ export function generateRows(options: {
   return rows;
 }
 
-export function rowsToCsv(rows: SyntheticRow[]): string {
+export function rowsToCsv(rows: ReferenceRow[]): string {
   return [
     [
       "Account Holder",
@@ -190,7 +190,7 @@ export function rowsToCsv(rows: SyntheticRow[]): string {
     ].join(","),
     ...rows.map((row) =>
       [
-        "Synthetic User",
+        "Reference User",
         `'${row.account}`,
         row.meter,
         row.localStart,
@@ -201,8 +201,8 @@ export function rowsToCsv(rows: SyntheticRow[]): string {
         "N/A",
         "N/A",
         row.estimated ? "Y" : "",
-        row.address ?? "SYNTHETIC SERVICE ADDRESS",
-        row.city ?? "SAMPLE CITY",
+        row.address ?? "REFERENCE SERVICE ADDRESS",
+        row.city ?? "TEST CITY",
       ]
         .map(csvCell)
         .join(","),
@@ -213,7 +213,7 @@ export function rowsToCsv(rows: SyntheticRow[]): string {
 export function malformedCsv(): string {
   return [
     "Account Holder,Interval Start Date/Time,Net Consumption (kWh)",
-    "Synthetic User,2024-01-01 00:00,1.0",
+    "Reference User,2024-01-01 00:00,1.0",
   ].join("\n");
 }
 

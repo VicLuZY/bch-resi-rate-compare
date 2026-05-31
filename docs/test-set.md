@@ -1,6 +1,6 @@
 # Documented Test Set
 
-The automated tests use synthetic data only. They are intended to prove the calculation and validation mechanics without committing customer exports.
+The automated tests cover the calculation and validation mechanics.
 
 ## Validation coverage
 
@@ -16,7 +16,7 @@ The automated tests use synthetic data only. They are intended to prove the calc
 
 ## Calculation coverage
 
-- `synthetic benchmark`: high annual consumption is calculated independently for all four comparison options, including tier allocation, base charges, clock-window allocation, and riders.
+- `benchmark`: high annual consumption is calculated independently for all four comparison options, including tier allocation, base charges, clock-window allocation, and riders.
 - `editable assumptions`: changing a rate value in the config changes calculated results without code changes.
 - `CSV export`: exported summary totals match the calculated result totals.
 

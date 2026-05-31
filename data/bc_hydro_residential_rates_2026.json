@@ -2,7 +2,7 @@
   "utility": "BC Hydro",
   "jurisdiction": "British Columbia, Canada",
   "customer_class": "Residential",
-  "searched_on": "2026-05-24",
+  "reference_date": "2026-05-24",
   "currency": "CAD",
   "energy_unit": "kWh",
   "rate_values_unit": "cents",

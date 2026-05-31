@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseConsumptionFiles } from "../src/domain/csv";
 import { analyzeUploads } from "../src/domain/validation";
-import { syntheticRateConfig } from "./fixtures";
+import { referenceRateConfig } from "./referenceData";
 
 const examples = [
   {
@@ -17,8 +17,8 @@ const examples = [
   },
 ];
 
-describe("sanitized example exports", () => {
-  it.each(examples)("$fileName is loadable and contains no real identifiers", (example) => {
+describe("example exports", () => {
+  it.each(examples)("$fileName is loadable and identifies the profile", (example) => {
     const text = readFileSync(`public/examples/${example.fileName}`, "utf8");
     expect(text).toContain(example.holder);
     expect(text).toContain(example.meter);
@@ -28,7 +28,7 @@ describe("sanitized example exports", () => {
       parsed.records,
       parsed.fileSummaries,
       parsed.issues,
-      syntheticRateConfig.timezone,
+      referenceRateConfig.timezone,
     );
     const meter = analysis.meters[0];
 

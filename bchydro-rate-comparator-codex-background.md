@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a browser-only interactive website that lets a residential BC Hydro customer upload one or more BC Hydro interval-consumption CSV exports, reconstruct a complete continuous annual usage record for each meter, validate data continuity and quality, and compare the annual cost of the eligible residential base-rate and time-band combinations in a transparent, editable, and auditable way without embedding rate constants, customer identifiers, filenames, sample data, or tariff assumptions directly in the application logic.
+Build a browser-only interactive website that lets a residential BC Hydro customer upload one or more BC Hydro interval-consumption CSV exports, reconstruct a complete continuous annual usage record for each meter, validate data continuity and quality, and compare the annual cost of the eligible residential base-rate and time-band combinations in a transparent, editable, and auditable way without embedding rate constants, customer identifiers, filenames, or tariff assumptions directly in the application logic.
 
 ## Context
 
@@ -34,7 +34,7 @@ Primary source references for Codex to consult when implementing or updating the
 - BC Hydro residential flat rate page: https://www.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/flat.html
 - BC Hydro residential time-band page: https://www.bchydro.com/accounts-billing/rates-energy-use/electricity-rates/residential-rates/time-band.html
 
-Do not encode rate values directly in component code, parser code, calculator code, tests, or UI strings. Use a versioned, replaceable rate configuration file or user-editable rate table. The application may ship with a blank, placeholder, or separately generated configuration file, but the calculation engine must treat rates, thresholds, time windows, riders, taxes, levies, effective dates, and rounding rules as data.
+Do not encode rate values directly in component code, parser code, calculator code, tests, or UI strings. Use a versioned, replaceable rate configuration file or user-editable rate table. The calculation engine must treat rates, thresholds, time windows, riders, taxes, levies, effective dates, and rounding rules as data.
 
 ## Supported rate concepts
 
@@ -52,15 +52,15 @@ Taxes and levies should be explicit assumptions. The tool should clearly disting
 
 ## No-hard-codes policy
 
-The application must avoid hard-coded values in business logic. This includes rate amounts, tier thresholds, time-band start and end times, rider percentages, tax percentages, billing-period assumptions, currency symbols, utility source labels, sample account numbers, meter numbers, addresses, filenames, and personal names.
+The application must avoid hard-coded values in business logic. This includes rate amounts, tier thresholds, time-band start and end times, rider percentages, tax percentages, billing-period assumptions, currency symbols, utility source labels, account numbers, meter numbers, addresses, filenames, and personal names.
 
-Use centralized configuration for all utility-specific parameters. Use schema maps or parser adapters for source-file column names. Use synthetic fixtures for tests. Do not commit real customer data or screenshots containing real customer identifiers.
+Use centralized configuration for all utility-specific parameters. Use schema maps or parser adapters for source-file column names. Do not commit real customer data or screenshots containing real customer identifiers.
 
 Acceptable constants are structural concepts that define the app domain, such as the supported comparison option identifiers, the idea that intervals are measured in energy units, and the requirement to validate a complete annual period. Even these should be represented cleanly through named configuration or domain types rather than scattered literals.
 
 ## Input data background
 
-BC Hydro's interval-consumption CSV export is a row-based file where each row represents an interval for a specific account and meter. Sample exports show a header row followed by interval records. The application should support the canonical BC Hydro export fields through a central schema map and should fail gracefully when required fields are missing.
+BC Hydro's interval-consumption CSV export is a row-based file where each row represents an interval for a specific account and meter. The application should support the canonical BC Hydro export fields through a central schema map and should fail gracefully when required fields are missing.
 
 Canonical fields observed in the export format include:
 
@@ -166,11 +166,11 @@ Avoid statements that imply the result is an official BC Hydro bill. Label the r
 
 Do not transmit uploaded files, parsed rows, account metadata, meter metadata, or analysis results to any external service. Do not store customer data in local storage by default. If optional persistence is added later, make it explicit and reversible.
 
-Mask or omit private fields in the UI by default. Show only enough metadata for users to distinguish meters, such as a redacted meter identifier or user-supplied nickname. Never include real customer identifiers in demo data, test data, committed fixtures, or screenshots.
+Mask or omit private fields in the UI by default. Show only enough metadata for users to distinguish meters, such as a redacted meter identifier or user-supplied nickname. Never include real customer identifiers in demo data, test data, committed files, or screenshots.
 
 ## Recommended implementation structure
 
-Use a clear separation between parsing, normalization, validation, rate configuration, calculation, and presentation. The calculator should be pure and testable with synthetic interval data and synthetic rate configurations. The UI should call the calculator only after validation succeeds.
+Use a clear separation between parsing, normalization, validation, rate configuration, calculation, and presentation. The calculator should be pure and testable. The UI should call the calculator only after validation succeeds.
 
 Recommended modules:
 
@@ -189,14 +189,14 @@ Do not couple calculations to UI state. Do not hide utility-specific assumptions
 
 ## Testing expectations
 
-Use synthetic datasets to test all calculation and validation paths. Test complete annual data, segmented same-meter uploads, overlapping duplicates, conflicting duplicates, missing intervals, daylight-saving transitions, estimated intervals, multi-meter uploads, incomplete datasets, and out-of-scope generation indicators.
+Test all calculation and validation paths. Test complete annual data, segmented same-meter uploads, overlapping duplicates, conflicting duplicates, missing intervals, daylight-saving transitions, estimated intervals, multi-meter uploads, incomplete datasets, and out-of-scope generation indicators.
 
-Use synthetic rate configurations to test tiered, flat, and time-band calculations. Do not use real current rate values in tests. Test that changing the rate configuration changes results without code changes.
+Test tiered, flat, and time-band calculations. Do not use real current rate values in tests. Test that changing the rate configuration changes results without code changes.
 
-Sample BC Hydro exports may be used locally by Codex for parser development, but they should not be committed into the repository or embedded in fixtures unless all private data has been removed and the data has been replaced with synthetic values.
+BC Hydro exports may be used locally for parser development, but they should not be committed into the repository or embedded in the app.
 
 ## Acceptance criteria
 
 A user can open the site locally or from static hosting, upload one or more BC Hydro interval CSVs, see the files grouped by meter, merge segmented files for the same meter, receive clear validation feedback, select a complete annual analysis period, edit or review the active rate configuration, and compare annual costs for Rate Schedule 1101, Rate Schedule 1101 plus Rate Schedule 2101, Rate Schedule 1151, and Rate Schedule 1151 plus Rate Schedule 2101 with itemized, exportable results.
 
-The finished implementation must contain no hard-coded rate values, tariff thresholds, time-band windows, tax values, rider values, customer identifiers, meter identifiers, file names, or sample private data in the business logic or UI. All such values must be supplied through uploaded files, user input, or a clearly separated versioned configuration layer.
+The finished implementation must contain no hard-coded rate values, tariff thresholds, time-band windows, tax values, rider values, customer identifiers, meter identifiers, file names, or private data in the business logic or UI. All such values must be supplied through uploaded files, user input, or a clearly separated versioned configuration layer.

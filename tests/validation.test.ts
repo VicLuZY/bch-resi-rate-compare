@@ -2,28 +2,28 @@ import { describe, expect, it } from "vitest";
 import { parseConsumptionFiles } from "../src/domain/csv";
 import { analyzeUploads } from "../src/domain/validation";
 import {
-  generateRows,
+  rowsForPeriod,
   malformedCsv,
   rowsToCsv,
-  syntheticRateConfig,
+  referenceRateConfig,
   TEST_TIMEZONE,
-} from "./fixtures";
+} from "./referenceData";
 
 function analyzeCsvs(csvs: string[]) {
   const parsed = parseConsumptionFiles(
-    csvs.map((text, index) => ({ name: `synthetic-${index + 1}.csv`, text })),
+    csvs.map((text, index) => ({ name: `reference-${index + 1}.csv`, text })),
   );
   return analyzeUploads(
     parsed.records,
     parsed.fileSummaries,
     parsed.issues,
-    syntheticRateConfig.timezone,
+    referenceRateConfig.timezone,
   );
 }
 
 describe("upload validation", () => {
   it("accepts a complete leap-year dataset with daylight-saving transitions", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2024-01-01T00:00",
       end: "2025-01-01T00:00",
       kwh: 1,
@@ -40,13 +40,13 @@ describe("upload validation", () => {
     expect(meter.completePeriods).toHaveLength(1);
     expect(meter.selectedPeriod?.intervalCount).toBe(8784);
     expect(meter.selectedPeriod?.serviceDays).toBe(366);
-    expect(meter.customerNames).toEqual(["Synthetic User"]);
-    expect(meter.accountNumbers).toEqual(["SYNTHETIC-ACCOUNT"]);
-    expect(meter.serviceAddresses).toEqual(["SYNTHETIC SERVICE ADDRESS"]);
+    expect(meter.customerNames).toEqual(["Reference User"]);
+    expect(meter.accountNumbers).toEqual(["REFERENCE-ACCOUNT"]);
+    expect(meter.serviceAddresses).toEqual(["REFERENCE SERVICE ADDRESS"]);
   });
 
   it("merges segmented files for the same meter into one complete annual period", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2024-01-01T00:00",
       end: "2025-01-01T00:00",
       meter: "MTR-SEGMENTED",
@@ -64,7 +64,7 @@ describe("upload validation", () => {
   });
 
   it("finds non-overlapping complete years for a three-year export", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2023-05-30T00:00",
       end: "2026-05-30T00:00",
       kwh: 1,
@@ -84,7 +84,7 @@ describe("upload validation", () => {
   }, 15_000);
 
   it("deduplicates exact overlap rows from segmented exports", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2024-01-01T00:00",
       end: "2025-01-01T00:00",
       kwh: 1,
@@ -101,7 +101,7 @@ describe("upload validation", () => {
   });
 
   it("rejects conflicting overlap rows instead of averaging them", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2024-01-01T00:00",
       end: "2025-01-01T00:00",
       kwh: 1,
@@ -121,7 +121,7 @@ describe("upload validation", () => {
   });
 
   it("reports missing intervals and refuses a dataset with less than one valid year", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2024-01-01T00:00",
       end: "2025-01-01T00:00",
       kwh: 1,
@@ -148,7 +148,7 @@ describe("upload validation", () => {
   });
 
   it("warns about generation-like outflow and estimated intervals", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2024-01-01T00:00",
       end: "2025-01-01T00:00",
       estimatedEvery: 1000,

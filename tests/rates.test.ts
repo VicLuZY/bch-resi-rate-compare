@@ -3,11 +3,11 @@ import { parseConsumptionFiles } from "../src/domain/csv";
 import { comparisonSummaryCsv } from "../src/domain/export";
 import { calculateAverageComparisons, calculateComparisons } from "../src/domain/rates";
 import { analyzeUploads } from "../src/domain/validation";
-import { generateRows, rowsToCsv, syntheticRateConfig } from "./fixtures";
+import { rowsForPeriod, rowsToCsv, referenceRateConfig } from "./referenceData";
 import type { RateConfig } from "../src/domain/types";
 
-function benchmarkBundle(config: RateConfig = syntheticRateConfig) {
-  const rows = generateRows({
+function benchmarkBundle(config: RateConfig = referenceRateConfig) {
+  const rows = rowsForPeriod({
     start: "2024-01-01T00:00",
     end: "2025-01-01T00:00",
     kwh: 10,
@@ -27,7 +27,7 @@ function benchmarkBundle(config: RateConfig = syntheticRateConfig) {
 }
 
 describe("rate calculations", () => {
-  it("reconciles all four options to an independently prepared synthetic benchmark", () => {
+  it("reconciles all four options to an independent reference calculation", () => {
     const bundle = benchmarkBundle();
     const byOption = Object.fromEntries(
       bundle.results.map((result) => [result.optionId, result]),
@@ -63,7 +63,7 @@ describe("rate calculations", () => {
 
   it("updates results when the editable rate configuration changes", () => {
     const original = benchmarkBundle();
-    const changedConfig: RateConfig = structuredClone(syntheticRateConfig);
+    const changedConfig: RateConfig = structuredClone(referenceRateConfig);
     const flat = changedConfig.schedules.RS1151;
     if (flat.type !== "flat") {
       throw new Error("Expected flat schedule.");
@@ -78,7 +78,7 @@ describe("rate calculations", () => {
   });
 
   it("averages all complete annual periods instead of using only the latest year", () => {
-    const rows = generateRows({
+    const rows = rowsForPeriod({
       start: "2023-01-01T00:00",
       end: "2026-01-01T00:00",
       kwh: (dateTime) => dateTime.year - 2022,
@@ -88,7 +88,7 @@ describe("rate calculations", () => {
       parsed.records,
       parsed.fileSummaries,
       parsed.issues,
-      syntheticRateConfig.timezone,
+      referenceRateConfig.timezone,
     );
     const meter = analysis.meters[0];
 
@@ -97,16 +97,16 @@ describe("rate calculations", () => {
     const averaged = calculateAverageComparisons(
       meter,
       meter.completePeriods,
-      syntheticRateConfig,
+      referenceRateConfig,
     );
     const latest = calculateComparisons(
       meter,
       meter.completePeriods.at(-1)!,
-      syntheticRateConfig,
+      referenceRateConfig,
     );
     const yearlyFlatCosts = meter.completePeriods.map(
       (period) =>
-        calculateComparisons(meter, period, syntheticRateConfig).results.find(
+        calculateComparisons(meter, period, referenceRateConfig).results.find(
           (result) => result.optionId === "RS1151",
         )!.totalCost,
     );
@@ -127,7 +127,7 @@ describe("rate calculations", () => {
   }, 15_000);
 
   it("itemizes enabled taxes from the editable configuration", () => {
-    const taxedConfig: RateConfig = structuredClone(syntheticRateConfig);
+    const taxedConfig: RateConfig = structuredClone(referenceRateConfig);
     taxedConfig.taxes = [
       {
         id: "test-tax",

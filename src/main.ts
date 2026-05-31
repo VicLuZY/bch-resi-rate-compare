@@ -29,14 +29,14 @@ const EXAMPLE_EXPORTS = [
   {
     id: "ev",
     label: "EV charging example",
-    description: "Synthetic overnight charging profile without electric space heating.",
+    description: "Overnight charging profile without electric space heating.",
     fileName: "bchydro-example-ev-charging-no-electric-heat.csv",
     url: `${import.meta.env.BASE_URL}examples/bchydro-example-ev-charging-no-electric-heat.csv`,
   },
   {
     id: "baseboard",
     label: "Electric baseboard example",
-    description: "Synthetic winter heating profile without EV charging.",
+    description: "Winter heating profile without EV charging.",
     fileName: "bchydro-example-electric-baseboard-no-ev.csv",
     url: `${import.meta.env.BASE_URL}examples/bchydro-example-electric-baseboard-no-ev.csv`,
   },
@@ -159,10 +159,10 @@ function renderUploadPanel(): string {
         <input id="fileInput" type="file" accept=".csv,text/csv" multiple />
         <span>Choose CSV files</span>
       </label>
-      <div class="example-loader" aria-label="Load sanitized example CSVs">
+      <div class="example-loader" aria-label="Load example CSVs">
         <div>
-          <strong>Try sanitized examples</strong>
-          <span>Generated placeholder data with no real customer identifiers.</span>
+          <strong>Try examples</strong>
+          <span>Choose an EV charging profile or an electric heating profile.</span>
         </div>
         <div class="example-buttons">
           ${EXAMPLE_EXPORTS.map(
@@ -537,7 +537,7 @@ function renderValidationPanel(
               <span>After submitting the request, return to Data Export Requests or Download Exports in the same BC Hydro area. When the request status is Ready, download the CSV and upload it here.</span>
             </li>
           </ol>
-          <p class="privacy-callout">Private names, account numbers, and service addresses are read from your uploaded CSV in the browser only; this published page does not include sample personal account data.</p>
+          <p class="privacy-callout">Private names, account numbers, and service addresses are read from your uploaded CSV in the browser only; this published page does not include personal account data.</p>
         </div>
       </section>
     `;
