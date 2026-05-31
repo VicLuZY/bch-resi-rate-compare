@@ -26,7 +26,17 @@
         position: fixed;
         left: 16px;
         top: 12px;
+        z-index: 20;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #fff;
+        color: #0b2f57;
+        font-weight: 800;
         transform: translateY(-140%);
+      }
+
+      .skip-link:focus {
+        transform: translateY(0);
       }
 
       .site-hero {
@@ -63,8 +73,7 @@
 
       .privacy-note,
       .hero-lede,
-      .progress-chip em,
-      .status-card p {
+      .progress-chip em {
         color: #d8e8f5;
       }
 
@@ -159,6 +168,10 @@
         color: #102033;
       }
 
+      .status-card p {
+        color: #4f6275;
+      }
+
       .status-badge {
         width: fit-content;
         border-radius: 999px;
@@ -243,6 +256,7 @@
           </div>
         </div>
       </header>
+      <main id="mainContent" aria-label="Rate comparison calculator"></main>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
