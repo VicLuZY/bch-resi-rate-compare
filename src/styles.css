@@ -1278,11 +1278,6 @@ h3 {
   fill: var(--blue);
 }
 
-.dual-axis-chart .cost-bar {
-  fill: var(--nav);
-  opacity: 0.78;
-}
-
 .dual-axis-chart rect {
   transform-box: fill-box;
   transform-origin: center bottom;
@@ -1356,10 +1351,6 @@ h3 {
 
 .metric-legend .usage.tou {
   background: linear-gradient(90deg, var(--green) 0 33%, var(--gold) 33% 66%, var(--red) 66% 100%);
-}
-
-.metric-legend .cost {
-  background: var(--nav);
 }
 
 @keyframes chart-bar-rise {
@@ -1903,7 +1894,7 @@ input[type="time"] {
 .site-hero {
   position: relative;
   overflow: hidden;
-  padding: 16px clamp(16px, 5vw, 64px) 48px;
+  padding: 12px clamp(16px, 5vw, 64px) 14px;
   background:
     linear-gradient(135deg, rgba(11, 47, 87, 0.96), rgba(7, 76, 117, 0.93)),
     var(--nav);
@@ -1911,14 +1902,8 @@ input[type="time"] {
 }
 
 .site-hero::after {
-  position: absolute;
-  inset: auto -8% -42% 42%;
-  height: 72%;
-  border-radius: 50%;
-  background: rgba(84, 205, 170, 0.16);
-  content: "";
-  filter: blur(32px);
-  pointer-events: none;
+  display: none;
+  content: none;
 }
 
 .hero-nav,
@@ -1934,7 +1919,7 @@ input[type="time"] {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding-bottom: 40px;
+  padding-bottom: 8px;
 }
 
 .brand-lockup {
@@ -1948,16 +1933,16 @@ input[type="time"] {
 .brand-mark {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.12);
 }
 
 .brand-mark::before {
-  width: 15px;
-  height: 20px;
+  width: 13px;
+  height: 18px;
   border-radius: 8px 8px 3px 3px;
   background: linear-gradient(180deg, #62d49f, #9cd7ff);
   content: "";
@@ -1966,15 +1951,22 @@ input[type="time"] {
 
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.78fr);
+  grid-template-columns: 1fr;
   align-items: end;
-  gap: clamp(32px, 6vw, 72px);
+  gap: 16px;
 }
 
 .hero-copy {
   display: grid;
-  gap: 20px;
-  max-width: 780px;
+  gap: 8px;
+  max-width: 1080px;
+}
+
+.compact-hero {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 1400px);
+  margin: 0 auto;
 }
 
 .eyebrow,
@@ -1992,19 +1984,19 @@ input[type="time"] {
 }
 
 .hero-copy h1 {
-  max-width: 820px;
+  max-width: 1120px;
   margin: 0;
-  font-size: clamp(36px, 7vw, 76px);
-  line-height: 1.02;
+  font-size: clamp(26px, 3.2vw, 38px);
+  line-height: 1.08;
   letter-spacing: 0;
 }
 
 .hero-lede {
-  max-width: 670px;
+  max-width: 1020px;
   margin: 0;
   color: #d8e8f5;
-  font-size: clamp(16px, 2vw, 20px);
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.4;
 }
 
 .hero-actions,
@@ -2017,7 +2009,13 @@ input[type="time"] {
 }
 
 .hero-actions {
-  margin-top: 4px;
+  margin-top: 0;
+}
+
+.site-hero .primary-link,
+.site-hero .secondary-link {
+  min-height: 38px;
+  padding: 0 14px;
 }
 
 .primary-link,
@@ -2045,16 +2043,16 @@ input[type="time"] {
 }
 
 .progress-chips {
-  margin-top: 10px;
+  margin-top: 2px;
 }
 
 .progress-chip {
   display: inline-grid;
   gap: 2px;
-  min-width: 118px;
-  padding: 10px 12px;
+  min-width: 104px;
+  padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 12px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -2078,38 +2076,12 @@ input[type="time"] {
   border-color: rgba(131, 203, 255, 0.72);
 }
 
-.hero-visual {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-
-.status-card,
-.hero-stats,
 .panel,
 .empty-state {
   border: 1px solid rgba(215, 226, 238, 0.92);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--shadow);
-}
-
-.status-card {
-  display: grid;
-  gap: 10px;
-  padding: 18px;
-  color: var(--ink);
-}
-
-.status-card strong {
-  font-size: clamp(22px, 3vw, 32px);
-  line-height: 1.1;
-}
-
-.status-card p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .status-badge {
@@ -2153,47 +2125,6 @@ input[type="time"] {
   color: var(--red);
 }
 
-.hero-meter {
-  display: flex;
-  align-items: end;
-  gap: 5px;
-  min-height: 190px;
-  padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
-    rgba(255, 255, 255, 0.08);
-}
-
-.hero-meter span {
-  flex: 1;
-  min-width: 4px;
-  height: calc(24% + (var(--i) % 9) * 7%);
-  border-radius: 999px 999px 3px 3px;
-  background: linear-gradient(180deg, #9cd7ff, #62d49f);
-  opacity: 0.86;
-  animation: rise 620ms ease both;
-  animation-delay: calc(var(--i) * 24ms);
-}
-
-.hero-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  overflow: hidden;
-}
-
-.hero-stats div {
-  min-width: 0;
-  padding: 16px;
-  color: var(--ink);
-}
-
-.hero-stats div + div {
-  border-left: 1px solid var(--line);
-}
-
-.hero-stats span,
 .rate-card-total span,
 .mobile-data-card span {
   display: block;
@@ -2201,14 +2132,6 @@ input[type="time"] {
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
-}
-
-.hero-stats strong {
-  display: block;
-  margin-top: 5px;
-  font-size: clamp(18px, 2.5vw, 28px);
-  line-height: 1.1;
-  overflow-wrap: anywhere;
 }
 
 .workspace {
@@ -2758,10 +2681,6 @@ details summary:hover {
     grid-template-columns: 1fr;
   }
 
-  .hero-visual {
-    max-width: 760px;
-  }
-
   .landing-workspace .main-panel {
     order: -1;
   }
@@ -2798,15 +2717,15 @@ details summary:hover {
 
 @media (max-width: 760px) {
   .site-hero {
-    padding-bottom: 36px;
+    padding-bottom: 16px;
   }
 
   .hero-nav {
-    padding-bottom: 28px;
+    padding-bottom: 12px;
   }
 
   .hero-copy h1 {
-    font-size: clamp(34px, 12vw, 48px);
+    font-size: clamp(28px, 9vw, 40px);
   }
 
   .hero-actions,
@@ -2822,14 +2741,12 @@ details summary:hover {
     width: 100%;
   }
 
-  .hero-stats,
   .metadata-band,
   .metric-strip,
   .tod-kpis {
     grid-template-columns: 1fr;
   }
 
-  .hero-stats div + div,
   .metadata-band div,
   .metric-strip div,
   .tod-kpis div {
@@ -2894,12 +2811,6 @@ details summary:hover {
 
   .progress-chip {
     width: 100%;
-  }
-
-  .hero-meter {
-    min-height: 140px;
-    gap: 3px;
-    padding: 14px;
   }
 }
 

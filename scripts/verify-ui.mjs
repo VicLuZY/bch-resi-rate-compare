@@ -60,7 +60,7 @@ try {
       .count();
     const mobileCardsVisible = await page.locator(".results-table-mobile").first().isVisible();
     const tableScrollVisible = await page.locator(".table-scroll").first().isVisible();
-    const bestOptionText = await page.locator(".status-card strong").first().innerText();
+    const bestOptionText = await page.locator(".rate-card.best h4").first().innerText();
 
     const screenshotPath = path.join(outputDir, `ui-${width}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });

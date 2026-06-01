@@ -160,11 +160,10 @@ function render(): void {
 function renderHero(
   comparison?: ComparisonBundle,
   selectedMeter?: MeterAnalysis,
-  selectedPeriods: AnalysisPeriod[] = [],
+  _selectedPeriods: AnalysisPeriod[] = [],
 ): string {
   const uploadCount = state.upload?.files.length ?? 0;
   const meterCount = state.upload?.meters.length ?? 0;
-  const selectedSummary = summarizePeriods(selectedPeriods);
   const best = comparison?.results[0];
   const configStatus = state.rateConfigLoading
     ? "Loading rates"
@@ -181,41 +180,19 @@ function renderHero(
         </div>
         <div class="privacy-note">Local-first analysis. Uploaded files stay in this browser session.</div>
       </div>
-      <div class="hero-grid">
-        <div class="hero-copy">
-          <p class="eyebrow">BC residential electricity rate comparison</p>
-          <h1>See which residential rate option best fits your hourly use.</h1>
-          <p class="hero-lede">Upload BC Hydro interval CSV exports, validate the meter history, compare annual totals, and review the assumptions before exporting a customer-readable summary.</p>
-          <div class="hero-actions">
-            <a class="primary-link" href="#fileInput">Upload CSV exports</a>
-            <a class="secondary-link" href="${BC_HYDRO_DATA_EXPORT_URL}" target="_blank" rel="noreferrer">Get BC Hydro data</a>
-          </div>
-          <div class="progress-chips" aria-label="Comparison progress">
-            ${renderProgressChip("Upload", uploadCount ? `${uploadCount} file${uploadCount === 1 ? "" : "s"}` : "Start", uploadCount > 0, !uploadCount)}
-            ${renderProgressChip("Validate", meterCount ? `${meterCount} meter${meterCount === 1 ? "" : "s"}` : "Waiting", Boolean(selectedMeter), Boolean(uploadCount && !selectedMeter))}
-            ${renderProgressChip("Compare", best ? formatCurrency(best.totalCost) : "Waiting", Boolean(best), Boolean(selectedMeter && !best))}
-            ${renderProgressChip("Export", best ? "Ready" : "Waiting", Boolean(best), false)}
-          </div>
+      <div class="hero-copy compact-hero">
+        <p class="eyebrow">BC residential electricity rate comparison</p>
+        <h1>Compare residential rate options from hourly use.</h1>
+        <p class="hero-lede">Upload BC Hydro hourly CSVs, validate the meter history, compare annual totals, and export a readable summary.</p>
+        <div class="hero-actions">
+          <a class="primary-link" href="#fileInput">Upload CSV exports</a>
+          <a class="secondary-link" href="${BC_HYDRO_DATA_EXPORT_URL}" target="_blank" rel="noreferrer">Get BC Hydro data</a>
         </div>
-        <div class="hero-visual" aria-label="Current comparison status">
-          <div class="status-card">
-            <span class="status-badge ${state.loadError ? "bad" : state.rateConfigLoading ? "info" : "good"}">${configStatus}</span>
-            <strong>${best ? renderTrimmedText(best.label, 42) : "No annual comparison yet"}</strong>
-            <p>${best ? `${formatCurrency(best.totalCost)} estimated annual total for ${formatKwh(best.totalKwh)}.` : "Upload at least one complete continuous local year to unlock ranked annual costs."}</p>
-          </div>
-          <div class="hero-meter" aria-hidden="true">
-            ${Array.from({ length: 28 }, (_, index) => `<span style="--i:${index}"></span>`).join("")}
-          </div>
-          <div class="hero-stats">
-            <div>
-              <span>Annual usage</span>
-              <strong>${selectedPeriods.length ? formatKwh(selectedSummary.totalKwh) : "Pending"}</strong>
-            </div>
-            <div>
-              <span>Service days</span>
-              <strong>${selectedPeriods.length ? formatNumber(selectedSummary.serviceDays) : "Pending"}</strong>
-            </div>
-          </div>
+        <div class="progress-chips" aria-label="Comparison progress">
+          ${renderProgressChip("Rates", configStatus, !state.rateConfigLoading && !state.loadError, state.rateConfigLoading)}
+          ${renderProgressChip("Upload", uploadCount ? `${uploadCount} file${uploadCount === 1 ? "" : "s"}` : "Start", uploadCount > 0, !uploadCount)}
+          ${renderProgressChip("Validate", meterCount ? `${meterCount} meter${meterCount === 1 ? "" : "s"}` : "Waiting", Boolean(selectedMeter), Boolean(uploadCount && !selectedMeter))}
+          ${renderProgressChip("Compare", best ? formatCurrency(best.totalCost) : "Waiting", Boolean(best), Boolean(selectedMeter && !best))}
         </div>
       </div>
     </header>
@@ -1584,8 +1561,7 @@ function renderMonthlyChart(
   return `
     ${renderDualAxisBarChart(monthly, "Monthly usage and cost bar chart", "monthly-bars", {
       labelEvery: 1,
-      usageMaxWidth: 18,
-      costMaxWidth: 12,
+      barMaxWidth: 24,
     })}
     ${renderMetricLegend()}
   `;
@@ -1601,8 +1577,7 @@ function renderHourlyChart(
     ${renderDualAxisBarChart(hourly, "Average hourly usage and cost bar chart", "hourly-bars", {
       labelEvery: 6,
       forceLabels: new Set([23]),
-      usageMaxWidth: 16,
-      costMaxWidth: 7,
+      barMaxWidth: 18,
     })}
     ${renderMetricLegend(true)}
     ${renderTodLegend(bundle)}
@@ -1620,8 +1595,7 @@ function renderDualAxisBarChart(
   options: {
     labelEvery: number;
     forceLabels?: Set<number>;
-    usageMaxWidth: number;
-    costMaxWidth: number;
+    barMaxWidth: number;
   },
 ): string {
   const width = 760;
@@ -1635,8 +1609,7 @@ function renderDualAxisBarChart(
   const chartWidth = chartRight - left;
   const chartHeight = chartBottom - top;
   const groupWidth = chartWidth / points.length;
-  const usageBarWidth = Math.max(4, Math.min(options.usageMaxWidth, groupWidth * 0.44));
-  const costBarWidth = Math.max(3, Math.min(options.costMaxWidth, groupWidth * 0.3));
+  const barWidth = Math.max(5, Math.min(options.barMaxWidth, groupWidth * 0.58));
   const maxKwh = Math.max(...points.map((point) => point.kwh), 1);
   const maxCost = Math.max(...points.map((point) => point.cost), 1);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
@@ -1664,38 +1637,24 @@ function renderDualAxisBarChart(
         .map((point, index) => {
           const center = left + index * groupWidth + groupWidth / 2;
           const usageHeight = (point.kwh / maxKwh) * chartHeight;
-          const costHeight = (point.cost / maxCost) * chartHeight;
-          const usageX = center - usageBarWidth - 1.5;
-          const costX = center + 1.5;
+          const barX = center - barWidth / 2;
           const usageY = chartBottom - usageHeight;
-          const costY = chartBottom - costHeight;
           const showLabel =
             index % options.labelEvery === 0 || Boolean(options.forceLabels?.has(Number(point.key)));
           return `
             <g>
               <rect
                 class="usage-bar ${escapeAttribute(point.usageClassName ?? "")}"
-                x="${usageX}"
+                x="${barX}"
                 y="${usageY}"
-                width="${usageBarWidth}"
+                width="${barWidth}"
                 height="${usageHeight}"
                 rx="3"
                 style="--bar-index:${index}"
               >
-                <title>${escapeHtml(point.label)} usage: ${formatKwh(point.kwh)}${
+                <title>${escapeHtml(point.label)}: ${formatKwh(point.kwh)}; ${formatCurrency(point.cost)}${
                   point.detail ? `; ${escapeHtml(point.detail)}` : ""
                 }</title>
-              </rect>
-              <rect
-                class="cost-bar"
-                x="${costX}"
-                y="${costY}"
-                width="${costBarWidth}"
-                height="${costHeight}"
-                rx="3"
-                style="--bar-index:${index}"
-              >
-                <title>${escapeHtml(point.label)} cost: ${formatCurrency(point.cost)}</title>
               </rect>
               ${
                 showLabel
@@ -1713,8 +1672,7 @@ function renderDualAxisBarChart(
 function renderMetricLegend(timeOfUseUsage = false): string {
   return `
     <div class="chart-legend metric-legend">
-      <span><b class="usage ${timeOfUseUsage ? "tou" : ""}"></b>${timeOfUseUsage ? "TOU usage kWh" : "Usage kWh"}</span>
-      <span><b class="cost"></b>Cost</span>
+      <span><b class="usage ${timeOfUseUsage ? "tou" : ""}"></b>${timeOfUseUsage ? "TOU-colored shared bar" : "Shared usage/cost bar"}</span>
     </div>
   `;
 }
