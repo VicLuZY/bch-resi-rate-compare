@@ -1200,22 +1200,57 @@ h3 {
   font-size: 11px;
 }
 
+.dual-axis-chart .axis-title {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dual-axis-chart .axis-value,
+.dual-axis-chart .x-label {
+  font-size: 10px;
+}
+
+.dual-axis-chart .axis-line {
+  stroke: #cbd8e6;
+}
+
 .chart-svg .gridline {
   stroke: #edf1f6;
   stroke-width: 1;
 }
 
-.hourly-bars rect {
+.dual-axis-chart .usage-bar {
+  fill: var(--blue);
+}
+
+.dual-axis-chart .cost-bar {
+  fill: var(--nav);
+  opacity: 0.78;
+}
+
+.dual-axis-chart rect {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: chart-bar-rise 520ms ease both;
+  animation-delay: calc(var(--bar-index, 0) * 18ms);
+}
+
+.dual-axis-chart rect:hover {
+  opacity: 0.82;
+}
+
+.hourly-bars .usage-bar {
   transition:
     opacity 180ms ease,
     transform 180ms ease;
 }
 
-.hourly-bars rect:hover {
-  opacity: 0.82;
+.hourly-bars .usage-bar:hover {
+  transform: translateY(-2px);
 }
 
-.hourly-bars rect.discount,
+.hourly-bars .usage-bar.discount,
 .tod-clock .discount,
 .tod-band-row b.discount,
 .tod-legend b.discount {
@@ -1223,7 +1258,7 @@ h3 {
   background: var(--green);
 }
 
-.hourly-bars rect.neutral,
+.hourly-bars .usage-bar.neutral,
 .tod-clock .neutral,
 .tod-band-row b.neutral,
 .tod-legend b.neutral {
@@ -1231,12 +1266,58 @@ h3 {
   background: var(--gold);
 }
 
-.hourly-bars rect.premium,
+.hourly-bars .usage-bar.premium,
 .tod-clock .premium,
 .tod-band-row b.premium,
 .tod-legend b.premium {
-  fill: var(--orange);
-  background: var(--orange);
+  fill: var(--red);
+  background: var(--red);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-legend b {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.metric-legend .usage {
+  background: var(--blue);
+}
+
+.metric-legend .usage.tou {
+  background: linear-gradient(90deg, var(--green) 0 33%, var(--gold) 33% 66%, var(--red) 66% 100%);
+}
+
+.metric-legend .cost {
+  background: var(--nav);
+}
+
+@keyframes chart-bar-rise {
+  from {
+    transform: scaleY(0.2);
+    opacity: 0;
+  }
+
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 .heatmap {

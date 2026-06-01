@@ -1,4 +1,5 @@
 import "./styles.css";
+import { calendarDaysBetween, epochToWallKey } from "./domain/datetime";
 import type {
   AnalysisPeriod,
   AppliedPercentage,
@@ -45,6 +46,7 @@ const EXAMPLE_EXPORTS = [
 
 let analyzeUploadsFn: typeof import("./domain/validation").analyzeUploads | undefined;
 let intervalsForPeriodFn: typeof import("./domain/validation").intervalsForPeriod | undefined;
+let calculateComparisonsFn: typeof import("./domain/rates").calculateComparisons | undefined;
 let calculateAverageComparisonsFn:
   | typeof import("./domain/rates").calculateAverageComparisons
   | undefined;
@@ -867,7 +869,7 @@ function renderResultsPanel(bundle: ComparisonBundle, meter: MeterAnalysis): str
       ${renderInsightSummary(bundle)}
       ${renderCostComparisonDashboard(bundle)}
       ${renderRateCalculationSection(bundle, meter, cheapest)}
-      ${renderUsageDashboard(periodIntervals, bundle)}
+      ${renderUsageDashboard(periodIntervals, bundle, meter)}
       <div class="visual-section export-section" aria-labelledby="exportHeading">
         <div class="section-title">
           <div>
@@ -1278,22 +1280,26 @@ function renderCostStackBars(bundle: ComparisonBundle): string {
   `;
 }
 
-function renderUsageDashboard(intervals: NormalizedInterval[], bundle: ComparisonBundle): string {
-  const annualDivisor = Math.max(1, bundle.sourcePeriods.length);
+function renderUsageDashboard(
+  intervals: NormalizedInterval[],
+  bundle: ComparisonBundle,
+  meter: MeterAnalysis,
+): string {
+  const costResult = usageCostResult(bundle);
   return `
     <div class="visual-section usage-section">
       <div class="section-title">
         <h3>Usage over time</h3>
-        <span>Discrete hourly bars and time bands show when the average annual bill moves.</span>
+        <span>Usage reads on the left axis; estimated cost for ${escapeHtml(costResult.label)} reads on the right.</span>
       </div>
       <div class="chart-grid">
         <div class="chart-panel">
-          <h4>Average monthly kWh</h4>
-          ${renderMonthlyChart(intervals, annualDivisor)}
+          <h4>Average monthly usage and cost</h4>
+          ${renderMonthlyChart(meter, bundle, costResult)}
         </div>
         <div class="chart-panel">
-          <h4>Average hourly load by rate band</h4>
-          ${renderHourlyChart(intervals, bundle)}
+          <h4>Average hourly usage and cost</h4>
+          ${renderHourlyChart(intervals, bundle, costResult)}
         </div>
         <div class="chart-panel wide-chart">
           <h4>Day and hour intensity</h4>
@@ -1438,7 +1444,10 @@ function formatCentsPerKwh(value: number): string {
 }
 
 function findTodPeriodForHour(schedule: TimeOfDaySchedule, hour: number): TimeOfDaySchedule["periods"][number] {
-  const minute = hour * 60;
+  return findTodPeriodForMinute(schedule, hour * 60);
+}
+
+function findTodPeriodForMinute(schedule: TimeOfDaySchedule, minute: number): TimeOfDaySchedule["periods"][number] {
   return (
     schedule.periods.find((period) => {
       const start = clockMinutes(period.startTime);
@@ -1461,116 +1470,316 @@ function clockMinutes(value: string): number {
   return Number(hour) * 60 + Number(minute);
 }
 
-function renderMonthlyChart(intervals: NormalizedInterval[], annualDivisor: number): string {
-  const monthly = [...groupByMonth(intervals, annualDivisor > 1).entries()].map(([month, kwh]) => ({
-    month,
-    kwh: kwh / annualDivisor,
-  }));
-  const max = Math.max(...monthly.map((item) => item.kwh), 1);
-  const width = 720;
-  const height = 240;
-  const left = 46;
-  const bottom = 34;
-  const chartWidth = width - left - 18;
-  const chartHeight = height - 32 - bottom;
-  const gap = 6;
-  const barWidth = monthly.length ? Math.max(8, chartWidth / monthly.length - gap) : 0;
+interface UsageCostPoint {
+  key: string;
+  label: string;
+  shortLabel: string;
+  kwh: number;
+  cost: number;
+  usageClassName?: string;
+  detail?: string;
+}
+
+function renderMonthlyChart(
+  meter: MeterAnalysis,
+  bundle: ComparisonBundle,
+  costResult: RateComparisonResult,
+): string {
+  const monthly = monthlyUsageCostMetrics(meter, bundle, costResult);
+  if (!monthly.length) {
+    return `<p class="muted">Monthly usage and cost data is not available for this selection.</p>`;
+  }
 
   return `
-    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Monthly consumption chart">
-      <line x1="${left}" y1="${height - bottom}" x2="${width - 12}" y2="${height - bottom}" />
-      ${monthly
-        .map((item, index) => {
-          const barHeight = (item.kwh / max) * chartHeight;
-          const x = left + index * (barWidth + gap);
-          const y = height - bottom - barHeight;
+    ${renderDualAxisBarChart(monthly, "Monthly usage and cost bar chart", "monthly-bars", {
+      labelEvery: 1,
+      usageMaxWidth: 18,
+      costMaxWidth: 12,
+    })}
+    ${renderMetricLegend()}
+  `;
+}
+
+function renderHourlyChart(
+  intervals: NormalizedInterval[],
+  bundle: ComparisonBundle,
+  costResult: RateComparisonResult,
+): string {
+  const hourly = hourlyUsageCostMetrics(intervals, costResult);
+  return `
+    ${renderDualAxisBarChart(hourly, "Average hourly usage and cost bar chart", "hourly-bars", {
+      labelEvery: 6,
+      forceLabels: new Set([23]),
+      usageMaxWidth: 16,
+      costMaxWidth: 7,
+    })}
+    ${renderMetricLegend(true)}
+    ${renderTodLegend(bundle)}
+  `;
+}
+
+function usageCostResult(bundle: ComparisonBundle): RateComparisonResult {
+  return timeOfDayResult(bundle) ?? bundle.results[0];
+}
+
+function renderDualAxisBarChart(
+  points: UsageCostPoint[],
+  ariaLabel: string,
+  className: string,
+  options: {
+    labelEvery: number;
+    forceLabels?: Set<number>;
+    usageMaxWidth: number;
+    costMaxWidth: number;
+  },
+): string {
+  const width = 760;
+  const height = 282;
+  const left = 58;
+  const right = 76;
+  const top = 28;
+  const bottom = 44;
+  const chartRight = width - right;
+  const chartBottom = height - bottom;
+  const chartWidth = chartRight - left;
+  const chartHeight = chartBottom - top;
+  const groupWidth = chartWidth / points.length;
+  const usageBarWidth = Math.max(4, Math.min(options.usageMaxWidth, groupWidth * 0.44));
+  const costBarWidth = Math.max(3, Math.min(options.costMaxWidth, groupWidth * 0.3));
+  const maxKwh = Math.max(...points.map((point) => point.kwh), 1);
+  const maxCost = Math.max(...points.map((point) => point.cost), 1);
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+
+  return `
+    <svg class="chart-svg dual-axis-chart ${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(ariaLabel)}">
+      <text class="axis-title usage-axis-title" x="${left}" y="16">kWh</text>
+      <text class="axis-title cost-axis-title" x="${chartRight}" y="16" text-anchor="end">Cost</text>
+      <line class="axis-line" x1="${left}" y1="${top}" x2="${left}" y2="${chartBottom}" />
+      <line class="axis-line" x1="${chartRight}" y1="${top}" x2="${chartRight}" y2="${chartBottom}" />
+      <line class="axis-line" x1="${left}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}" />
+      ${ticks
+        .map((tick) => {
+          const y = chartBottom - tick * chartHeight;
           return `
             <g>
-              <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="3">
-                <title>${escapeHtml(monthLabel(item.month))}: ${formatKwh(item.kwh)}</title>
-              </rect>
-              <text x="${x + barWidth / 2}" y="${height - 10}" text-anchor="middle">${escapeHtml(
-                shortMonthLabel(item.month),
-              )}</text>
+              <line class="gridline" x1="${left}" y1="${y}" x2="${chartRight}" y2="${y}" />
+              <text class="axis-value" x="${left - 8}" y="${y + 4}" text-anchor="end">${formatAxisKwh(maxKwh * tick)}</text>
+              <text class="axis-value" x="${chartRight + 8}" y="${y + 4}">${formatAxisCurrency(maxCost * tick)}</text>
             </g>
           `;
         })
         .join("")}
-      <text x="8" y="20">${formatKwh(max)}</text>
+      ${points
+        .map((point, index) => {
+          const center = left + index * groupWidth + groupWidth / 2;
+          const usageHeight = (point.kwh / maxKwh) * chartHeight;
+          const costHeight = (point.cost / maxCost) * chartHeight;
+          const usageX = center - usageBarWidth - 1.5;
+          const costX = center + 1.5;
+          const usageY = chartBottom - usageHeight;
+          const costY = chartBottom - costHeight;
+          const showLabel =
+            index % options.labelEvery === 0 || Boolean(options.forceLabels?.has(Number(point.key)));
+          return `
+            <g>
+              <rect
+                class="usage-bar ${escapeAttribute(point.usageClassName ?? "")}"
+                x="${usageX}"
+                y="${usageY}"
+                width="${usageBarWidth}"
+                height="${usageHeight}"
+                rx="3"
+                style="--bar-index:${index}"
+              >
+                <title>${escapeHtml(point.label)} usage: ${formatKwh(point.kwh)}${
+                  point.detail ? `; ${escapeHtml(point.detail)}` : ""
+                }</title>
+              </rect>
+              <rect
+                class="cost-bar"
+                x="${costX}"
+                y="${costY}"
+                width="${costBarWidth}"
+                height="${costHeight}"
+                rx="3"
+                style="--bar-index:${index}"
+              >
+                <title>${escapeHtml(point.label)} cost: ${formatCurrency(point.cost)}</title>
+              </rect>
+              ${
+                showLabel
+                  ? `<text class="x-label" x="${center}" y="${height - 12}" text-anchor="middle">${escapeHtml(point.shortLabel)}</text>`
+                  : ""
+              }
+            </g>
+          `;
+        })
+        .join("")}
     </svg>
   `;
 }
 
-function renderHourlyChart(intervals: NormalizedInterval[], bundle: ComparisonBundle): string {
+function renderMetricLegend(timeOfUseUsage = false): string {
+  return `
+    <div class="chart-legend metric-legend">
+      <span><b class="usage ${timeOfUseUsage ? "tou" : ""}"></b>${timeOfUseUsage ? "TOU usage kWh" : "Usage kWh"}</span>
+      <span><b class="cost"></b>Cost</span>
+    </div>
+  `;
+}
+
+function monthlyUsageCostMetrics(
+  meter: MeterAnalysis,
+  bundle: ComparisonBundle,
+  costResult: RateComparisonResult,
+): UsageCostPoint[] {
+  if (!state.rateConfig || !calculateComparisonsFn || !intervalsForPeriodFn) {
+    return fallbackMonthlyUsageCostMetrics(
+      intervalsForPeriods(meter.intervals, bundle.sourcePeriods),
+      bundle,
+      costResult,
+    );
+  }
+
+  const totals = new Map<string, { kwh: number; cost: number; count: number }>();
+  for (const sourcePeriod of bundle.sourcePeriods) {
+    const sourceMonthTotals = new Map<string, { kwh: number; cost: number }>();
+    const sourceIntervals = intervalsForPeriodFn(meter.intervals, sourcePeriod);
+    const monthlyBuckets = groupIntervalsByYearMonth(sourceIntervals);
+    for (const [yearMonth, bucketIntervals] of monthlyBuckets) {
+      const monthKey = bundle.isAverage ? yearMonth.slice(5) : yearMonth;
+      const monthPeriod = analysisPeriodFromIntervals(bucketIntervals, meter.cadenceMinutes ?? 60);
+      const monthBundle = calculateComparisonsFn(meter, monthPeriod, state.rateConfig);
+      const monthResult =
+        monthBundle.results.find((result) => result.optionId === costResult.optionId) ??
+        monthBundle.results[0];
+      const sourceEntry = sourceMonthTotals.get(monthKey) ?? { kwh: 0, cost: 0 };
+      sourceEntry.kwh += monthPeriod.totalKwh;
+      sourceEntry.cost += monthResult.totalCost;
+      sourceMonthTotals.set(monthKey, sourceEntry);
+    }
+
+    for (const [monthKey, sourceEntry] of sourceMonthTotals) {
+      const total = totals.get(monthKey) ?? { kwh: 0, cost: 0, count: 0 };
+      total.kwh += sourceEntry.kwh;
+      total.cost += sourceEntry.cost;
+      total.count += 1;
+      totals.set(monthKey, total);
+    }
+  }
+
+  return [...totals.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([month, total]) => ({
+      key: month,
+      label: monthLabel(month),
+      shortLabel: shortMonthLabel(month),
+      kwh: total.count ? total.kwh / total.count : 0,
+      cost: total.count ? total.cost / total.count : 0,
+    }));
+}
+
+function fallbackMonthlyUsageCostMetrics(
+  intervals: NormalizedInterval[],
+  bundle: ComparisonBundle,
+  costResult: RateComparisonResult,
+): UsageCostPoint[] {
+  const annualDivisor = Math.max(1, bundle.sourcePeriods.length);
+  const totalKwh = Math.max(costResult.totalKwh, Number.EPSILON);
+  return [...groupByMonth(intervals, bundle.isAverage).entries()].map(([month, kwh]) => {
+    const usage = kwh / annualDivisor;
+    return {
+      key: month,
+      label: monthLabel(month),
+      shortLabel: shortMonthLabel(month),
+      kwh: usage,
+      cost: costResult.totalCost * (usage / totalKwh),
+    };
+  });
+}
+
+function hourlyUsageCostMetrics(
+  intervals: NormalizedInterval[],
+  costResult: RateComparisonResult,
+): UsageCostPoint[] {
+  const schedule = timeOfDaySchedule();
+  const todAdjustmentTotal = costResult.timeOfDayAllocation
+    ? costResult.timeOfDayAllocation.reduce((total, period) => total + period.amount, 0)
+    : 0;
+  const nonTodCostPerKwh = costResult.totalKwh
+    ? (costResult.totalCost - todAdjustmentTotal) / costResult.totalKwh
+    : 0;
   const hourly = Array.from({ length: 24 }, (_, hour) => ({
     hour,
     kwh: 0,
+    cost: 0,
     count: 0,
   }));
+
   for (const interval of intervals) {
     const item = hourly[interval.localStart.hour];
+    const todPeriod = schedule
+      ? findTodPeriodForMinute(
+          schedule,
+          interval.localStart.hour * 60 + interval.localStart.minute,
+        )
+      : undefined;
+    const adjustment = costResult.timeOfDayAllocation && todPeriod
+      ? todPeriod.adjustmentPerKwh
+      : 0;
     item.kwh += interval.consumptionKwh;
+    item.cost += interval.consumptionKwh * (nonTodCostPerKwh + adjustment);
     item.count += 1;
   }
-  const points = hourly.map((item) => ({
-    hour: item.hour,
-    value: item.count ? item.kwh / item.count : 0,
-  }));
-  const max = Math.max(...points.map((point) => point.value), 1);
-  const width = 720;
-  const height = 240;
-  const left = 42;
-  const bottom = 34;
-  const chartWidth = width - left - 18;
-  const chartHeight = height - 34 - bottom;
-  const gap = 5;
-  const barWidth = Math.max(10, chartWidth / 24 - gap);
-  const schedule = timeOfDaySchedule();
 
-  return `
-    <svg class="chart-svg hourly-bars" viewBox="0 0 ${width} ${height}" role="img" aria-label="Average hourly load bar chart">
-      <line x1="${left}" y1="${height - bottom}" x2="${width - 12}" y2="${height - bottom}" />
-      ${[0.25, 0.5, 0.75, 1]
-        .map((tick) => {
-          const y = height - bottom - tick * chartHeight;
-          return `<line class="gridline" x1="${left}" y1="${y}" x2="${width - 12}" y2="${y}" />`;
-        })
-        .join("")}
-      ${points
-        .map((point) => {
-          const barHeight = (point.value / max) * chartHeight;
-          const x = left + point.hour * (barWidth + gap);
-          const y = height - bottom - barHeight;
-          const todPeriod = schedule ? findTodPeriodForHour(schedule, point.hour) : undefined;
-          const adjustment = todPeriod ? roundAdjustment(todPeriod.adjustmentPerKwh) : 0;
-          return `
-            <rect
-              class="${todClassForAdjustment(adjustment)}"
-              x="${x}"
-              y="${y}"
-              width="${barWidth}"
-              height="${barHeight}"
-              rx="3"
-            >
-              <title>${point.hour}:00 average ${formatKwh(point.value)}${
-                todPeriod
-                  ? `; ${todPeriod.label} ${formatCentsPerKwh(todPeriod.adjustmentPerKwh)}`
-                  : ""
-              }</title>
-            </rect>
-          `;
-        })
-        .join("")}
-      ${[0, 6, 12, 18, 23]
-        .map((hour) => {
-          const x = left + hour * (barWidth + gap) + barWidth / 2;
-          return `<text x="${x}" y="${height - 10}" text-anchor="middle">${hour}</text>`;
-        })
-        .join("")}
-      <text x="8" y="20">${formatKwh(max)}</text>
-    </svg>
-    ${renderTodLegend(bundle)}
-  `;
+  return hourly.map((item) => {
+    const todPeriod = schedule ? findTodPeriodForHour(schedule, item.hour) : undefined;
+    const adjustment = todPeriod ? roundAdjustment(todPeriod.adjustmentPerKwh) : 0;
+    return {
+      key: String(item.hour),
+      label: `${String(item.hour).padStart(2, "0")}:00`,
+      shortLabel: String(item.hour),
+      kwh: item.count ? item.kwh / item.count : 0,
+      cost: item.count ? item.cost / item.count : 0,
+      usageClassName: todClassForAdjustment(adjustment),
+      detail: todPeriod
+        ? `${todPeriod.label} ${formatCentsPerKwh(todPeriod.adjustmentPerKwh)}`
+        : undefined,
+    };
+  });
+}
+
+function groupIntervalsByYearMonth(intervals: NormalizedInterval[]): Map<string, NormalizedInterval[]> {
+  const groups = new Map<string, NormalizedInterval[]>();
+  for (const interval of intervals) {
+    const key = `${String(interval.localStart.year).padStart(4, "0")}-${String(
+      interval.localStart.month,
+    ).padStart(2, "0")}`;
+    const group = groups.get(key) ?? [];
+    group.push(interval);
+    groups.set(key, group);
+  }
+
+  return new Map([...groups.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function analysisPeriodFromIntervals(
+  intervals: NormalizedInterval[],
+  cadenceMinutes: number,
+): AnalysisPeriod {
+  const sorted = [...intervals].sort((left, right) => left.epochMs - right.epochMs);
+  const first = sorted[0];
+  const last = sorted.at(-1)!;
+  const endEpochMsExclusive = last.epochMs + cadenceMinutes * 60_000;
+  return {
+    startEpochMs: first.epochMs,
+    endEpochMsExclusive,
+    startLocal: epochToWallKey(first.epochMs, activeTimezone()),
+    endLocal: epochToWallKey(endEpochMsExclusive, activeTimezone()),
+    serviceDays: calendarDaysBetween(first.epochMs, endEpochMsExclusive, activeTimezone()),
+    intervalCount: sorted.length,
+    totalKwh: sorted.reduce((total, interval) => total + interval.consumptionKwh, 0),
+  };
 }
 
 function renderHeatmap(intervals: NormalizedInterval[]): string {
@@ -2123,6 +2332,7 @@ async function loadValidationModule(): Promise<typeof import("./domain/validatio
 
 async function loadRatesModule(): Promise<typeof import("./domain/rates")> {
   const module = await import("./domain/rates");
+  calculateComparisonsFn = module.calculateComparisons;
   calculateAverageComparisonsFn = module.calculateAverageComparisons;
   validateRateConfigFn = module.validateRateConfig;
   return module;
@@ -2170,6 +2380,23 @@ function formatCurrency(value: number): string {
 
 function formatKwh(value: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} kWh`;
+}
+
+function formatAxisKwh(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: value >= 10 ? 0 : 1,
+    notation: value >= 10_000 ? "compact" : "standard",
+  }).format(value);
+}
+
+function formatAxisCurrency(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: state.rateConfig?.currency ?? "CAD",
+    currencyDisplay: "narrowSymbol",
+    maximumFractionDigits: value >= 10 ? 0 : 2,
+    notation: value >= 10_000 ? "compact" : "standard",
+  }).format(value);
 }
 
 function formatNumber(value: number): string {
