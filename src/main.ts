@@ -28,6 +28,7 @@ const BC_HYDRO_DATA_EXPORT_URL =
   "https://app.bchydro.com/datadownload/web/download-centre.html";
 const DEPLOY_CODE = import.meta.env.VITE_DEPLOY_CODE || "qivnaro-local";
 const AVERAGE_PERIOD_INDEX = -1;
+const LOCAL_DATE_TIME_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\b/g;
 const EXAMPLE_EXPORTS = [
   {
     id: "ev",
@@ -199,7 +200,7 @@ function renderHero(
         <div class="hero-visual" aria-label="Current comparison status">
           <div class="status-card">
             <span class="status-badge ${state.loadError ? "bad" : state.rateConfigLoading ? "info" : "good"}">${configStatus}</span>
-            <strong>${best ? escapeHtml(best.label) : "No annual comparison yet"}</strong>
+            <strong>${best ? renderTrimmedText(best.label, 42) : "No annual comparison yet"}</strong>
             <p>${best ? `${formatCurrency(best.totalCost)} estimated annual total for ${formatKwh(best.totalKwh)}.` : "Upload at least one complete continuous local year to unlock ranked annual costs."}</p>
           </div>
           <div class="hero-meter" aria-hidden="true">
@@ -295,8 +296,9 @@ function renderUploadPanel(): string {
                     <div class="file-row">
                       <span class="file-pill">File ${index + 1}</span>
                       <strong>${file.acceptedRows.toLocaleString()} accepted rows</strong>
-                      <span>${escapeHtml(file.firstLocal ?? "no start")} to ${escapeHtml(
-                        file.lastLocal ?? "no end",
+                      <span>${formatLocalDateTimeRange(
+                        file.firstLocal,
+                        file.lastLocal,
                       )}</span>
                     </div>
                   `,
@@ -601,7 +603,7 @@ function renderSourceNotes(): string {
       <summary>Configuration source notes</summary>
       <ul>
         ${state.rateConfig.sourceNotes
-          .map((note) => `<li>${linkify(escapeHtml(note))}</li>`)
+          .map((note) => `<li>${linkify(note)}</li>`)
           .join("")}
       </ul>
     </details>
@@ -697,7 +699,7 @@ function renderValidationPanel(
                     (meter) => `
                       <option value="${escapeAttribute(meter.meterKey)}" ${
                         meter.meterKey === selectedMeter?.meterKey ? "selected" : ""
-                      }>${escapeHtml(meter.meterDisplay)}</option>
+                      }>${escapeHtml(clipMiddle(meter.meterDisplay, 54))}</option>
                     `,
                   )
                   .join("")}
@@ -732,6 +734,83 @@ function formatExportDate(date: Date): string {
     day: "numeric",
     year: "numeric",
   }).format(date);
+}
+
+function formatLocalDateTimeRange(start?: string, end?: string): string {
+  const startText = formatLocalDateTime(start);
+  const endText = formatLocalDateTime(end);
+  if (startText === "Not available" && endText === "Not available") {
+    return startText;
+  }
+
+  return `${startText} to ${endText}`;
+}
+
+function formatDateRangeLabel(start: string, end: string): string {
+  return formatDateRangePlain(start, end);
+}
+
+function formatDateRangePlain(start: string, end: string): string {
+  return `${formatLocalDatePlain(start)} to ${formatLocalDatePlain(end)}`;
+}
+
+function formatLocalDateTime(value?: string): string {
+  return escapeHtml(formatLocalDateTimePlain(value));
+}
+
+function formatLocalDate(value?: string): string {
+  return escapeHtml(formatLocalDatePlain(value));
+}
+
+function formatLocalDateTimePlain(value?: string): string {
+  const date = localDateFromWallKey(value);
+  if (!date) {
+    return value ? formatGeneratedMessageFallback(value) : "Not available";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function formatLocalDatePlain(value?: string): string {
+  const date = localDateFromWallKey(value);
+  if (!date) {
+    return value ? formatGeneratedMessageFallback(value) : "Not available";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function localDateFromWallKey(value?: string): Date | undefined {
+  if (!value || value === "n/a") {
+    return undefined;
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) {
+    return undefined;
+  }
+
+  return new Date(
+    Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5]),
+    ),
+  );
 }
 
 function renderGlobalIssues(issues: ValidationIssue[]): string {
@@ -771,10 +850,11 @@ function renderMeterValidation(
       <div>
         <h3>Reconstructed meter</h3>
         <dl class="facts">
-          <div><dt>Meter</dt><dd>${escapeHtml(joinValues(meter.meterNumbers))}</dd></div>
+          <div><dt>Meter</dt><dd>${renderValueList(meter.meterNumbers)}</dd></div>
           <div><dt>Files</dt><dd>${meter.fileNames.length}</dd></div>
-          <div><dt>Date range</dt><dd>${escapeHtml(meter.dateRange?.startLocal ?? "n/a")} to ${escapeHtml(
-            meter.dateRange?.endLocal ?? "n/a",
+          <div><dt>Date range</dt><dd>${formatLocalDateTimeRange(
+            meter.dateRange?.startLocal,
+            meter.dateRange?.endLocal,
           )}</dd></div>
           <div><dt>Estimated intervals</dt><dd>${estimatedCount.toLocaleString()}</dd></div>
         </dl>
@@ -795,7 +875,7 @@ function renderMeterValidation(
                   .map(
                     (period, index) => `
                       <option value="${index}" ${index === periodIndex ? "selected" : ""}>
-                        ${escapeHtml(period.startLocal)} to ${escapeHtml(period.endLocal)}
+                        ${escapeHtml(formatDateRangeLabel(period.startLocal, period.endLocal))}
                       </option>
                     `,
                   )
@@ -805,7 +885,10 @@ function renderMeterValidation(
                 <div><dt>${selectedPeriods.length > 1 ? "Average annual consumption" : "Consumption"}</dt><dd>${formatKwh(selectedSummary.totalKwh)}</dd></div>
                 <div><dt>${selectedPeriods.length > 1 ? "Average service days" : "Service days"}</dt><dd>${formatNumber(selectedSummary.serviceDays)}</dd></div>
                 <div><dt>Rows included</dt><dd>${periodIntervals.length.toLocaleString()}</dd></div>
-                <div><dt>Source range</dt><dd>${escapeHtml(selectedSummary.startLocal)} to ${escapeHtml(selectedSummary.endLocal)}</dd></div>
+                <div><dt>Source range</dt><dd>${formatLocalDateTimeRange(
+                  selectedSummary.startLocal,
+                  selectedSummary.endLocal,
+                )}</dd></div>
               </dl>`
             : `<p class="blocked">No complete continuous local year is available for calculation.</p>`
         }
@@ -827,19 +910,22 @@ function renderMeterMetadata(meter: MeterAnalysis): string {
     <div class="metadata-band">
       <div>
         <span>Account holder</span>
-        <strong>${escapeHtml(joinValues(meter.customerNames))}</strong>
+        <strong>${renderValueList(meter.customerNames)}</strong>
       </div>
       <div>
         <span>Account number</span>
-        <strong>${escapeHtml(joinValues(meter.accountNumbers))}</strong>
+        <strong>${renderValueList(meter.accountNumbers)}</strong>
       </div>
       <div>
         <span>Meter number</span>
-        <strong>${escapeHtml(joinValues(meter.meterNumbers))}</strong>
+        <strong>${renderValueList(meter.meterNumbers)}</strong>
       </div>
       <div>
         <span>Service address</span>
-        <strong>${escapeHtml(joinValues([...meter.serviceAddresses, ...meter.cities]))}</strong>
+        <strong>${renderValueList([...meter.serviceAddresses, ...meter.cities], {
+          itemLength: 42,
+          maxItems: 2,
+        })}</strong>
       </div>
     </div>
   `;
@@ -857,12 +943,12 @@ function renderResultsPanel(bundle: ComparisonBundle, meter: MeterAnalysis): str
           <h2 id="resultsHeading">${bundle.isAverage ? "Average annual comparison" : "Annual comparison"}</h2>
           <p>${
             bundle.isAverage
-              ? `${periodCount} complete years averaged from ${escapeHtml(
+              ? `${periodCount} complete years averaged from ${formatLocalDate(
                   bundle.period.startLocal,
-                )} to ${escapeHtml(bundle.period.endLocal)}; ${formatKwh(
+                )} to ${formatLocalDate(bundle.period.endLocal)}; ${formatKwh(
                   bundle.period.totalKwh,
                 )} average annual usage.`
-              : `${escapeHtml(bundle.period.startLocal)} to ${escapeHtml(
+              : `${formatLocalDate(bundle.period.startLocal)} to ${formatLocalDate(
                   bundle.period.endLocal,
                 )}; ${formatKwh(bundle.period.totalKwh)}.`
           }</p>
@@ -882,7 +968,7 @@ function renderResultsPanel(bundle: ComparisonBundle, meter: MeterAnalysis): str
         </div>
         <div class="export-card">
           <div>
-            <strong>${escapeHtml(bundle.results[0].label)} is lowest at ${formatCurrency(bundle.results[0].totalCost)}</strong>
+            <strong>${renderTrimmedText(bundle.results[0].label, 42)} is lowest at ${formatCurrency(bundle.results[0].totalCost)}</strong>
             <span>${formatKwh(bundle.period.totalKwh)} ${bundle.isAverage ? "average annual" : "annual"} usage; ${bundle.results.length} rate options compared.</span>
           </div>
           <div class="button-row compact">
@@ -937,7 +1023,7 @@ function renderResultRow(result: RateComparisonResult, cheapest: number): string
   const difference = result.totalCost - cheapest;
   return `
     <tr>
-      <td>${escapeHtml(result.label)}</td>
+      <td>${renderTrimmedText(result.label, 34)}</td>
       <td>${formatCurrency(result.totalCost)}</td>
       <td>${formatCurrency(difference)}</td>
       <td>${formatPercent(cheapest ? difference / cheapest : 0)}</td>
@@ -954,7 +1040,7 @@ function renderResultMobileCard(result: RateComparisonResult, cheapest: number):
     <article class="mobile-data-card">
       <div>
         <span>Rate option</span>
-        <strong>${escapeHtml(result.label)}</strong>
+        <strong>${renderTrimmedText(result.label, 42)}</strong>
       </div>
       <dl>
         <div><dt>Total</dt><dd>${formatCurrency(result.totalCost)}</dd></div>
@@ -1000,7 +1086,7 @@ function renderInsightSummary(bundle: ComparisonBundle): string {
     <div class="insight-grid">
       <div class="insight-tile primary">
         <span>Best option</span>
-        <strong>${escapeHtml(cheapest.label)}</strong>
+        <strong>${renderTrimmedText(cheapest.label, 34)}</strong>
         <p>${formatCurrency(baselineSavings)} lower than RS 1101 (${formatPercent(
           baseline.totalCost ? baselineSavings / baseline.totalCost : 0,
         )}).</p>
@@ -1059,7 +1145,7 @@ function renderCostComparisonDashboard(bundle: ComparisonBundle): string {
             const width = maxTotal ? (row.total / maxTotal) * 100 : 0;
             return `
               <div class="bar-row">
-                <span>${escapeHtml(row.option)}</span>
+                <span>${renderTrimmedText(row.option, 34)}</span>
                 <div><b style="width:${width}%"></b></div>
                 <strong>${formatCurrency(row.total)}</strong>
                 <em>${row.total === cheapest ? "Lowest annual total" : `${formatCurrency(row.total - cheapest)} more`}</em>
@@ -1124,7 +1210,7 @@ function renderRateCalculationCard(
       <div class="rate-card-top">
         <span class="rank-badge">#${index + 1}</span>
         <div>
-          <h4>${escapeHtml(result.label)}</h4>
+          <h4>${renderTrimmedText(result.label, 42)}</h4>
           <p>${result.timeOfDayAllocation ? "Base schedule plus time-band adjustment" : "Base schedule only"}</p>
         </div>
       </div>
@@ -1152,7 +1238,7 @@ function renderRateCalculationCard(
             .map(
               (component) => `
                 <div>
-                  <span>${escapeHtml(component.label)}</span>
+                  <span>${renderTrimmedText(component.label, 46)}</span>
                   <strong>${formatCurrency(component.amount)}</strong>
                   <em>${component.quantity === undefined ? "Fixed or derived adjustment" : `${formatQuantity(component.quantity, component.unit)} × ${component.rate === undefined ? "derived rate" : formatRate(component.rate, component.unit)}`}</em>
                 </div>
@@ -1176,7 +1262,7 @@ function renderRateCalculationCard(
                 .map(
                   (component) => `
                     <tr>
-                      <td>${escapeHtml(component.label)}</td>
+                      <td>${renderTrimmedText(component.label, 46)}</td>
                       <td>${component.quantity === undefined ? "" : formatQuantity(component.quantity, component.unit)}</td>
                       <td>${component.rate === undefined ? "" : formatRate(component.rate, component.unit)}</td>
                       <td>${formatCurrency(component.amount)}</td>
@@ -1195,7 +1281,7 @@ function renderRateCalculationCard(
                 <article class="mobile-data-card compact">
                   <div>
                     <span>Component</span>
-                    <strong>${escapeHtml(component.label)}</strong>
+                    <strong>${renderTrimmedText(component.label, 46)}</strong>
                   </div>
                   <dl>
                     <div><dt>Quantity</dt><dd>${component.quantity === undefined ? "Fixed or derived" : formatQuantity(component.quantity, component.unit)}</dd></div>
@@ -1225,7 +1311,7 @@ function renderOptionGuideItem(result: RateComparisonResult): string {
 
   return `
     <div class="option-guide-item">
-      <strong>${escapeHtml(result.label)}</strong>
+      <strong>${renderTrimmedText(result.label, 42)}</strong>
       <span>${baseDescription}</span>
       <span>${timeBandDescription}</span>
       <em>${formatCurrency(result.totalCost)} for ${formatKwh(result.totalKwh)} average annual usage.</em>
@@ -1248,7 +1334,7 @@ function renderCostStackBars(bundle: ComparisonBundle): string {
           return `
             <div class="stack-row">
               <div class="stack-label">
-                <strong>${escapeHtml(result.label)}</strong>
+                <strong>${renderTrimmedText(result.label, 34)}</strong>
                 <span>${credits < 0 ? `${formatCurrency(Math.abs(credits))} credits` : "No credits"}</span>
               </div>
               <div class="stack-track">
@@ -1292,7 +1378,10 @@ function renderUsageDashboard(
     <div class="visual-section usage-section">
       <div class="section-title">
         <h3>Usage over time</h3>
-        <span>Usage reads on the left axis; estimated cost for ${escapeHtml(costResult.label)} reads on the right.</span>
+        <span>Usage reads on the left axis; estimated cost for ${renderTrimmedText(
+          costResult.label,
+          34,
+        )} reads on the right.</span>
       </div>
       <div class="chart-grid">
         <div class="chart-panel">
@@ -1739,7 +1828,7 @@ function hourlyUsageCostMetrics(
     const adjustment = todPeriod ? roundAdjustment(todPeriod.adjustmentPerKwh) : 0;
     return {
       key: String(item.hour),
-      label: `${String(item.hour).padStart(2, "0")}:00`,
+      label: formatHourLabel(item.hour),
       shortLabel: String(item.hour),
       kwh: item.count ? item.kwh / item.count : 0,
       cost: item.count ? item.cost / item.count : 0,
@@ -1810,7 +1899,7 @@ function renderHeatmap(intervals: NormalizedInterval[]): string {
               const cell = cells.get(`${dayOfWeek}-${hour}`);
               const value = cell?.count ? cell.kwh / cell.count : 0;
               const alpha = Math.max(0.08, value / max);
-              return `<i style="opacity:${alpha}"><title>${day} ${hour}:00 average ${formatKwh(value)}</title></i>`;
+              return `<i style="opacity:${alpha}"><title>${day} ${formatHourLabel(hour)} average ${formatKwh(value)}</title></i>`;
             }).join("")}
           `;
         })
@@ -1856,7 +1945,7 @@ function renderTimeOfDayBands(bundle: ComparisonBundle): string {
           const adjustment = roundAdjustment(period.adjustmentPerKwh);
           return `
             <span class="${todClassForAdjustment(adjustment)}">
-              <title>${hour}:00 ${period.label} ${formatCentsPerKwh(period.adjustmentPerKwh)}</title>
+              <title>${formatHourLabel(hour)} ${period.label} ${formatCentsPerKwh(period.adjustmentPerKwh)}</title>
             </span>
           `;
         }).join("")}
@@ -1878,7 +1967,7 @@ function renderTimeOfDayBands(bundle: ComparisonBundle): string {
                 band.periods
                   .map((period) =>
                     period.startTime && period.endTime
-                      ? `${period.label} ${period.startTime}-${period.endTime}`
+                      ? `${period.label} ${formatClockRange(period.startTime, period.endTime)}`
                       : period.label,
                   )
                   .join("; "),
@@ -1915,7 +2004,7 @@ function renderResultDetails(result: RateComparisonResult, meter: MeterAnalysis)
   return `
     <details>
       <summary>
-        <span>${escapeHtml(result.label)}</span>
+        <span>${renderTrimmedText(result.label, 42)}</span>
         <strong>${formatCurrency(result.totalCost)}</strong>
       </summary>
       <table class="component-table">
@@ -1933,7 +2022,7 @@ function renderResultDetails(result: RateComparisonResult, meter: MeterAnalysis)
             .map(
               (component) => `
                 <tr>
-                  <td>${escapeHtml(component.label)}</td>
+                  <td>${renderTrimmedText(component.label, 46)}</td>
                   <td>${component.quantity === undefined ? "" : formatQuantity(component.quantity, component.unit)}</td>
                   <td>${component.rate === undefined ? "" : formatRate(component.rate, component.unit)}</td>
                   <td>${formatCurrency(component.amount)}</td>
@@ -1953,7 +2042,7 @@ function renderResultDetails(result: RateComparisonResult, meter: MeterAnalysis)
 function renderMeterScope(meter: MeterAnalysis): string {
   return `
     <div class="scope-line">
-      <span>Meter ${escapeHtml(meter.meterDisplay)}</span>
+      <span>Meter ${renderTrimmedText(meter.meterDisplay, 36)}</span>
       <span>${meter.fileNames.length} uploaded source file${meter.fileNames.length === 1 ? "" : "s"}</span>
       <span>Config ${escapeHtml(state.rateConfig?.version ?? "unknown")}</span>
     </div>
@@ -2012,18 +2101,18 @@ function aggregateTodAllocation(
 
 function renderIssue(issue: ValidationIssue): string {
   const range = issue.range
-    ? ` (${escapeHtml(issue.range.startLocal)} to ${escapeHtml(issue.range.endLocal)})`
+    ? ` (${formatLocalDateTimeRange(issue.range.startLocal, issue.range.endLocal)})`
     : "";
   return `
     <div class="issue ${issue.severity}">
-      <strong>${escapeHtml(issue.severity)}</strong>
-      <span>${escapeHtml(issue.message)}${range}</span>
+      <strong>${escapeHtml(readableSeverity(issue.severity))}</strong>
+      <span>${escapeHtml(formatGeneratedMessage(issue.message))}${range}</span>
     </div>
   `;
 }
 
 function renderNotice(kind: "good" | "info" | "warning" | "error", message: string): string {
-  return `<div class="notice ${kind}">${escapeHtml(message)}</div>`;
+  return `<div class="notice ${kind}">${renderTrimmedText(formatGeneratedMessage(message), 180)}</div>`;
 }
 
 function bindEvents(): void {
@@ -2145,7 +2234,7 @@ async function copyCurrentComparisonSummary(): Promise<void> {
 function comparisonSummaryText(bundle: ComparisonBundle): string {
   const lines = [
     "BC Hydro residential rate comparison",
-    `${bundle.isAverage ? "Average annual" : "Annual"} period: ${bundle.period.startLocal} to ${bundle.period.endLocal}`,
+    `${bundle.isAverage ? "Average annual" : "Annual"} period: ${formatDateRangePlain(bundle.period.startLocal, bundle.period.endLocal)}`,
     `Usage: ${formatKwh(bundle.period.totalKwh)}`,
     "",
     "Ranked annual totals:",
@@ -2405,6 +2494,58 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 }
 
+function formatGeneratedMessage(message: string): string {
+  return formatGeneratedMessageFallback(
+    message.replace(LOCAL_DATE_TIME_PATTERN, (value) => formatLocalDateTimePlain(value)),
+  );
+}
+
+function formatGeneratedMessageFallback(value: string): string {
+  return value
+    .replace(/\b1 interval\(s\)/g, "1 interval")
+    .replace(/\b(\d+) interval\(s\)/g, "$1 intervals")
+    .replace(/\bn\/a\b/gi, "Not available")
+    .replace(/T(?=\d{2}:\d{2}\b)/g, " ");
+}
+
+function formatHourLabel(hour: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(2000, 0, 1, hour)));
+}
+
+function formatClockRange(start: string, end: string): string {
+  return `${formatClockTime(start)} to ${formatClockTime(end)}`;
+}
+
+function formatClockTime(value: string): string {
+  const [hour, minute] = value.split(":").map(Number);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    return value;
+  }
+
+  const options: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    timeZone: "UTC",
+  };
+  if (minute !== 0) {
+    options.minute = "2-digit";
+  }
+
+  return new Intl.DateTimeFormat(undefined, options).format(
+    new Date(Date.UTC(2000, 0, 1, hour, minute)),
+  );
+}
+
+function readableSeverity(severity: ValidationIssue["severity"]): string {
+  if (severity === "error") {
+    return "Needs attention";
+  }
+
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
+}
+
 function formatPercent(value: number): string {
   return new Intl.NumberFormat(undefined, {
     style: "percent",
@@ -2433,6 +2574,64 @@ function formatRate(value: number, unit?: string): string {
 
 function joinValues(values: string[]): string {
   return values.length ? values.join(", ") : "Not supplied";
+}
+
+function renderValueList(
+  values: string[],
+  options: { itemLength?: number; maxItems?: number } = {},
+): string {
+  const cleaned = values.map((value) => value.trim()).filter(Boolean);
+  if (!cleaned.length) {
+    return `<span class="empty-value">Not supplied</span>`;
+  }
+
+  const itemLength = options.itemLength ?? 32;
+  const maxItems = options.maxItems ?? 2;
+  const fullValue = cleaned.join(", ");
+  const visible = cleaned
+    .slice(0, maxItems)
+    .map((value) => renderTrimmedText(value, itemLength))
+    .join('<span class="value-separator">, </span>');
+  const remaining = cleaned.length - maxItems;
+
+  return `
+    <span class="value-list" title="${escapeAttribute(fullValue)}">
+      ${visible}
+      ${
+        remaining > 0
+          ? `<em class="value-more" aria-label="${remaining} more value${remaining === 1 ? "" : "s"}">+${remaining} more</em>`
+          : ""
+      }
+    </span>
+  `;
+}
+
+function renderTrimmedText(value: string, maxLength = 56): string {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return `<span class="empty-value">Not supplied</span>`;
+  }
+
+  const readable = formatGeneratedMessage(normalized);
+  const clipped = clipMiddle(readable, maxLength);
+  const title = clipped === readable
+    ? ""
+    : ` title="${escapeAttribute(readable)}" aria-label="${escapeAttribute(readable)}"`;
+  return `<span class="text-clip"${title}>${escapeHtml(clipped)}</span>`;
+}
+
+function clipMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  if (maxLength <= 8) {
+    return value.slice(0, maxLength);
+  }
+
+  const tailLength = Math.max(4, Math.floor(maxLength * 0.34));
+  const headLength = Math.max(1, maxLength - tailLength - 3);
+  return `${value.slice(0, headLength)}...${value.slice(-tailLength)}`;
 }
 
 function average(values: number[]): number {
@@ -2503,8 +2702,19 @@ function escapeAttribute(value: string): string {
 }
 
 function linkify(text: string): string {
-  return text.replace(
-    /(https:\/\/[^\s]+)/g,
-    '<a href="$1" target="_blank" rel="noreferrer">$1</a>',
-  );
+  const urlPattern = /(https:\/\/[^\s]+)/g;
+  let output = "";
+  let lastIndex = 0;
+  for (const match of text.matchAll(urlPattern)) {
+    const url = match[0];
+    const index = match.index ?? 0;
+    output += escapeHtml(text.slice(lastIndex, index));
+    output += `<a href="${escapeAttribute(url)}" target="_blank" rel="noreferrer" title="${escapeAttribute(
+      url,
+    )}">${escapeHtml(clipMiddle(url, 64))}</a>`;
+    lastIndex = index + url.length;
+  }
+
+  output += escapeHtml(text.slice(lastIndex));
+  return output;
 }

@@ -185,6 +185,44 @@ a {
   color: var(--ink);
 }
 
+.text-clip {
+  display: inline-block;
+  max-width: min(100%, 42ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.value-list {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  min-width: 0;
+  gap: 2px;
+}
+
+.value-list .text-clip {
+  max-width: 32ch;
+}
+
+.value-separator {
+  flex: 0 0 auto;
+}
+
+.value-more {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.empty-value {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .deploy-code {
   display: inline-flex;
   align-items: center;
