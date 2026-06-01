@@ -26,6 +26,7 @@ type TextFileInput = {
 const DEFAULT_RATE_CONFIG_URL = `${import.meta.env.BASE_URL}rates/bchydro-residential-2026-04-01.json`;
 const BC_HYDRO_DATA_EXPORT_URL =
   "https://app.bchydro.com/datadownload/web/download-centre.html";
+const DEPLOY_CODE = import.meta.env.VITE_DEPLOY_CODE || "qivnaro-local";
 const AVERAGE_PERIOD_INDEX = -1;
 const EXAMPLE_EXPORTS = [
   {
@@ -244,6 +245,7 @@ function renderSiteFooter(): string {
           <a href="https://github.com/VicLuZY/bch-resi-rate-compare/blob/main/LICENSE" target="_blank" rel="noreferrer">AGPL-3.0-only</a>.
         </span>
         <a href="https://github.com/VicLuZY/bch-resi-rate-compare" target="_blank" rel="noreferrer">Source code</a>
+        <span class="deploy-code">Deploy code <code>${escapeHtml(DEPLOY_CODE)}</code></span>
       </div>
       <p class="footer-disclaimer">
         Calculator results are estimates for comparison only, provided without warranty, and are not a BC Hydro bill or official tariff interpretation. Verify uploaded data, effective rates, riders, taxes, credits, charges, and bill-cycle rounding before using results for decisions.

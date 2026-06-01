@@ -2,7 +2,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "website-redesign"]
   workflow_dispatch:
 
 permissions:
@@ -40,8 +40,22 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build
-        run: npm run build
+      - name: Build Vite app
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          export VITE_DEPLOY_CODE="qivnaro-${GITHUB_RUN_NUMBER}-${short_sha}"
+          echo "Deploy code: ${VITE_DEPLOY_CODE}"
+          npm run build
+
+      - name: Verify Vite code stack
+        run: |
+          test -f dist/index.html
+          grep -q 'type="module"' dist/index.html
+          if grep -R -n -E 'Hugo|data-wasm-url|wasm/' dist; then
+            echo "Unexpected Hugo/WASM marker found in Pages artifact."
+            exit 1
+          fi
+          grep -R -q 'qivnaro-' dist
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

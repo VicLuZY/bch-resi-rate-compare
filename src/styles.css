@@ -185,6 +185,22 @@ a {
   color: var(--ink);
 }
 
+.deploy-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deploy-code code {
+  padding: 2px 6px;
+  border: 1px solid #cdd9e5;
+  border-radius: 4px;
+  background: #eef4f8;
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
 .footer-disclaimer {
   max-width: 1120px;
   margin: 0;
